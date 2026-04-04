@@ -1,22 +1,50 @@
+import { createDelivery } from "@/services/deliveryService";
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge, UrgencyDot, CategoryBadge } from "@/components/FoodBadges";
-import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map } from "lucide-react";
-import { getAllListings } from "@/services/foodService";
-import { FoodListing } from "@/types";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from "lucide-react";
+import { getAllListings, claimListing, updateListing } from "@/services/foodService";
+import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
 
-const collectorStats = [
-  { label: "Available Nearby", value: "6", icon: Package },
-  { label: "Claimed Today", value: "2", icon: Search },
-  { label: "Total Rescued", value: "820 kg", icon: Weight },
-  { label: "Trust Score", value: "4.7 ★", icon: Star },
-];
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+const freshIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+
+const expiringIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+
+const criticalIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+});
+
+function getMarkerIcon(listing: FoodListing) {
+  const diff = new Date(listing.pickupWindowEnd).getTime() - Date.now();
+  if (diff < 3600000) return criticalIcon;
+  if (diff < 7200000) return expiringIcon;
+  return freshIcon;
+}
 
 function CountdownTimer({ end }: { end: string }) {
   const [remaining, setRemaining] = useState("");
@@ -32,22 +60,79 @@ function CountdownTimer({ end }: { end: string }) {
     const timer = setInterval(tick, 60000);
     return () => clearInterval(timer);
   }, [end]);
-  return <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{remaining}</span>;
+  return (
+    <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <Clock className="h-3 w-3" />{remaining}
+    </span>
+  );
 }
 
 export default function CollectorDashboard() {
   const [listings, setListings] = useState<FoodListing[]>([]);
+  const [claimedListings, setClaimedListings] = useState<FoodListing[]>([]);
   const [view, setView] = useState<"card" | "map">("card");
   const [filters, setFilters] = useState({ category: "all", distance: "5", urgency: "all" });
+  const [viewTarget, setViewTarget] = useState<FoodListing | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    getAllListings().then((data) => setListings(data.filter((l) => l.status === "active")));
+    const stored = localStorage.getItem("foodbridge_user");
+    const u = stored ? JSON.parse(stored) : null;
+    setUser(u);
+    getAllListings().then((data) => {
+      setListings(data.filter((l) => l.status === "active"));
+      if (u) setClaimedListings(data.filter((l) => l.status === "claimed" && l.claimedBy === u.id));
+    });
   }, []);
 
-  const handleClaim = (id: string) => {
-    setListings((p) => p.map((l) => l.id === id ? { ...l, status: "claimed" as const } : l));
-    toast.success("Food claimed! The donor will be notified.");
+  const handleClaim = async (id: string) => {
+  if (!user) return;
+  await claimListing(id, user.id);
+  const claimed = listings.find(l => l.id === id);
+  if (claimed) {
+    setListings((p) => p.filter((l) => l.id !== id));
+    setClaimedListings((p) => [...p, { ...claimed, status: "claimed", claimedBy: user.id }]);
+
+    // Auto-create delivery for volunteers to see
+    await createDelivery({
+      listingId: claimed.id,
+      volunteerId: "unassigned",
+      donorId: claimed.donorId,
+      status: "assigned",
+      pickupAddress: claimed.address,
+      dropAddress: user.location?.address || "NGO Location",
+      estimatedTime: "30 mins",
+      distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
+      foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
+    });
+  }
+  toast.success("Food claimed! A delivery has been created for volunteers.");
+};
+
+  const handleUnclaim = async (id: string) => {
+    await updateListing(id, { status: "active", claimedBy: undefined });
+    const unclaimed = claimedListings.find(l => l.id === id);
+    if (unclaimed) {
+      setClaimedListings((p) => p.filter((l) => l.id !== id));
+      setListings((p) => [...p, { ...unclaimed, status: "active", claimedBy: undefined }]);
+    }
+    toast.success("Listing unclaimed.");
   };
+
+  const filteredListings = listings.filter(l => {
+    if (filters.category !== "all" && l.category !== filters.category) return false;
+    if (filters.urgency !== "all" && l.urgencyLevel !== filters.urgency) return false;
+    return true;
+  });
+
+  const totalKg = listings.reduce((s, l) => s + (l.unit === "kg" ? l.quantity : 0), 0);
+
+  const collectorStats = [
+    { label: "Available Nearby", value: listings.length.toString(), icon: Package },
+    { label: "Claimed by You", value: claimedListings.length.toString(), icon: Search },
+    { label: "Total Available", value: `${totalKg} kg`, icon: Weight },
+    { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
+  ];
 
   return (
     <DashboardLayout role="collector">
@@ -111,54 +196,147 @@ export default function CollectorDashboard() {
           </div>
         </div>
 
-        {/* Listings */}
-        {view === "card" ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {listings.map((l) => (
-              <Card key={l.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-0">
-                  <div className="h-32 bg-muted flex items-center justify-center text-muted-foreground">
-                    <Package className="h-8 w-8" />
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-semibold">{l.foodType}</h3>
-                        <p className="text-xs text-muted-foreground">{l.donorName}</p>
-                      </div>
-                      <UrgencyDot level={l.urgencyLevel} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CategoryBadge category={l.category} />
-                      <span className="text-sm font-medium">{l.quantity} {l.unit}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <CountdownTimer end={l.pickupWindowEnd} />
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> {(Math.random() * 5 + 0.5).toFixed(1)} km
-                      </span>
-                    </div>
-                    <Button className="w-full" size="sm" onClick={() => handleClaim(l.id)}>
-                      Claim Food
-                    </Button>
-                  </div>
+        {/* Card View */}
+        {view === "card" && (
+          <>
+            {filteredListings.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center text-muted-foreground">
+                  <Package className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No food listings available right now.</p>
                 </CardContent>
               </Card>
-            ))}
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredListings.map((l) => (
+                  <Card key={l.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-0">
+                      <div className="h-32 bg-muted flex items-center justify-center text-muted-foreground">
+                        <Package className="h-8 w-8" />
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-semibold">{l.foodType}</h3>
+                            <p className="text-xs text-muted-foreground">{l.donorName}</p>
+                          </div>
+                          <UrgencyDot level={l.urgencyLevel} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CategoryBadge category={l.category} />
+                          <span className="text-sm font-medium">{l.quantity} {l.unit}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <CountdownTimer end={l.pickupWindowEnd} />
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <MapPin className="h-3 w-3" /> {l.address.split(",")[0]}
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" className="flex-1" onClick={() => setViewTarget(l)}>
+                            Details
+                          </Button>
+                          <Button className="flex-1" size="sm" onClick={() => handleClaim(l.id)}>
+                            Claim
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Claimed by you section */}
+            {claimedListings.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold">Claimed by You</h2>
+                {claimedListings.map((l) => (
+                  <Card key={l.id} className="border-primary/30">
+                    <CardContent className="p-4 flex items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="font-semibold">{l.foodType}</p>
+                        <p className="text-xs text-muted-foreground">{l.quantity} {l.unit} · {l.address}</p>
+                      </div>
+                      <StatusBadge status={l.status} />
+                      <Button variant="outline" size="sm" className="text-destructive border-destructive/30" onClick={() => handleUnclaim(l.id)}>
+                        <X className="h-3 w-3 mr-1" /> Unclaim
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Map View with Leaflet */}
+        {view === "map" && (
+          <div className="rounded-xl overflow-hidden border" style={{ height: "500px" }}>
+            <MapContainer center={[13.0827, 80.2707]} zoom={13} style={{ height: "100%", width: "100%" }}>
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {filteredListings.map((l) => (
+                <Marker
+                  key={l.id}
+                  position={[
+                    l.location.lat + (Math.random() - 0.5) * 0.02,
+                    l.location.lng + (Math.random() - 0.5) * 0.02,
+                  ]}
+                  icon={getMarkerIcon(l)}
+                >
+                  <Popup>
+                    <div className="space-y-2 min-w-[180px]">
+                      <p className="font-semibold">{l.foodType}</p>
+                      <p className="text-xs text-gray-500">{l.donorName}</p>
+                      <p className="text-xs">{l.quantity} {l.unit} · {l.category}</p>
+                      <p className="text-xs text-gray-500">{l.address}</p>
+                      <button
+                        className="w-full bg-green-600 text-white text-xs py-1.5 rounded font-semibold hover:bg-green-700"
+                        onClick={() => handleClaim(l.id)}
+                      >
+                        Claim Food
+                      </button>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
           </div>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="h-96 bg-muted flex items-center justify-center text-muted-foreground rounded-lg">
-                <div className="text-center space-y-2">
-                  <MapPin className="h-12 w-12 mx-auto text-primary/30" />
-                  <p className="text-sm">Map view placeholder — Leaflet / Google Maps integration ready</p>
-                  <p className="text-xs">Colored pins: 🟢 Fresh  🟠 Expiring &lt;1hr  🔴 Critical</p>
+        )}
+
+        {/* View Details Modal */}
+        <Dialog open={!!viewTarget} onOpenChange={() => setViewTarget(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{viewTarget?.foodType}</DialogTitle>
+            </DialogHeader>
+            {viewTarget && (
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><p className="text-muted-foreground">Donor</p><p className="font-medium">{viewTarget.donorName}</p></div>
+                  <div><p className="text-muted-foreground">Category</p><p className="font-medium capitalize">{viewTarget.category}</p></div>
+                  <div><p className="text-muted-foreground">Quantity</p><p className="font-medium">{viewTarget.quantity} {viewTarget.unit}</p></div>
+                  <div><p className="text-muted-foreground">Urgency</p><UrgencyDot level={viewTarget.urgencyLevel} /></div>
+                </div>
+                <div><p className="text-muted-foreground">Address</p><p className="font-medium">{viewTarget.address}</p></div>
+                <div><p className="text-muted-foreground">Description</p><p>{viewTarget.description || "—"}</p></div>
+                <div><p className="text-muted-foreground">Dietary Tags</p><p className="font-medium">{viewTarget.dietaryTags.join(", ") || "None"}</p></div>
+                <div><p className="text-muted-foreground">Pickup Window</p>
+                  <p className="font-medium">
+                    {new Date(viewTarget.pickupWindowStart).toLocaleString("en-IN")} — {new Date(viewTarget.pickupWindowEnd).toLocaleString("en-IN")}
+                  </p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
+              <Button onClick={() => { handleClaim(viewTarget!.id); setViewTarget(null); }}>Claim Food</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

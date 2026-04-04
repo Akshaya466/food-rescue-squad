@@ -1,23 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Notification } from "@/types";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const mockNotifications: Notification[] = [
-  { id: "n1", userId: "u1", type: "claim", title: "New Claim!", message: "Helping Hands NGO claimed your Vegetable Biryani listing.", isRead: false, createdAt: new Date(Date.now() - 600000).toISOString() },
-  { id: "n2", userId: "u1", type: "pickup_reminder", title: "Pickup Reminder", message: "Idli & Sambar pickup window closes in 30 minutes.", isRead: false, createdAt: new Date(Date.now() - 1800000).toISOString() },
-  { id: "n3", userId: "u1", type: "rating", title: "New Rating", message: "You received a 5-star rating from Ravi Kumar.", isRead: true, createdAt: new Date(Date.now() - 86400000).toISOString() },
-  { id: "n4", userId: "u1", type: "delivery_assigned", title: "Delivery Assigned", message: "A volunteer has been assigned to pick up Dal Tadka & Rice.", isRead: true, createdAt: new Date(Date.now() - 172800000).toISOString() },
-];
+const STORAGE_KEY = "foodbridge_notifications";
+
+function loadNotifications(userId: string): Notification[] {
+  try {
+    const all: Notification[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    return all.filter((n) => n.userId === userId);
+  } catch {
+    return [];
+  }
+}
 
 export function NotificationBell() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("foodbridge_user");
+    const user = stored ? JSON.parse(stored) : null;
+    if (user) setNotifications(loadNotifications(user.id));
+  }, []);
+
   const unread = notifications.filter((n) => !n.isRead).length;
 
-  const markAllRead = () => setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  const markAllRead = () => {
+    const updated = notifications.map((n) => ({ ...n, isRead: true }));
+    setNotifications(updated);
+
+    // Save back to localStorage
+    const all: Notification[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const stored = localStorage.getItem("foodbridge_user");
+    const user = stored ? JSON.parse(stored) : null;
+    if (!user) return;
+    const others = all.filter((n) => n.userId !== user.id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...others, ...updated]));
+  };
 
   const timeAgo = (date: string) => {
     const diff = Date.now() - new Date(date).getTime();
@@ -50,18 +71,27 @@ export function NotificationBell() {
           )}
         </div>
         <ScrollArea className="h-80">
-          {notifications.map((n) => (
-            <div key={n.id} className={`p-4 border-b last:border-0 ${!n.isRead ? "bg-accent/50" : ""}`}>
-              <div className="flex items-start gap-2">
-                {!n.isRead && <span className="mt-1.5 h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{n.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{timeAgo(n.createdAt)}</p>
+          {notifications.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No notifications yet</p>
+            </div>
+          ) : (
+            notifications.map((n) => (
+              <div key={n.id} className={`p-4 border-b last:border-0 ${!n.isRead ? "bg-accent/50" : ""}`}>
+                <div className="flex items-start gap-2">
+                  {!n.isRead && (
+                    <span className="mt-1.5 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{n.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{timeAgo(n.createdAt)}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </ScrollArea>
       </PopoverContent>
     </Popover>

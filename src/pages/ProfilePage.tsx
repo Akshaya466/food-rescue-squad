@@ -1,18 +1,10 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Star, CheckCircle, Award, Package, Heart, Shield } from "lucide-react";
 import { getUserRatings } from "@/services/userService";
 import { useState, useEffect } from "react";
-import { Rating } from "@/types";
-
-const user = {
-  name: "Priya Sharma", email: "priya@greenplate.in", role: "donor",
-  orgName: "GreenPlate Catering", phone: "+91 98765 43210",
-  location: "T. Nagar, Chennai", trustScore: 4.8, totalRescues: 124,
-  isVerified: true, totalRatings: 42,
-};
+import { Rating, User } from "@/types";
 
 const badges = [
   { label: "Top Donor", icon: Award, color: "bg-warning/15 text-warning" },
@@ -22,43 +14,59 @@ const badges = [
 
 export default function ProfilePage() {
   const [ratings, setRatings] = useState<Rating[]>([]);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    getUserRatings("u1").then(setRatings);
+    const stored = localStorage.getItem("foodbridge_user");
+    if (stored) {
+      const u = JSON.parse(stored);
+      setUser(u);
+      getUserRatings(u.id).then(setRatings);
+    }
   }, []);
 
+  const initials = user?.name
+    ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase()
+    : "U";
+
   return (
-    <DashboardLayout role="donor">
+    <DashboardLayout role={user?.role || "donor"}>
       <div className="max-w-3xl mx-auto space-y-6">
-        {/* Profile Card */}
         <Card>
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
               <Avatar className="h-20 w-20">
-                <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">PS</AvatarFallback>
+                <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
               <div className="text-center sm:text-left space-y-2 flex-1">
                 <div className="flex items-center gap-2 justify-center sm:justify-start">
-                  <h1 className="text-2xl font-bold">{user.name}</h1>
-                  {user.isVerified && <CheckCircle className="h-5 w-5 text-success" />}
+                  <h1 className="text-2xl font-bold">{user?.name || "User"}</h1>
+                  {user?.isVerified && <CheckCircle className="h-5 w-5 text-success" />}
                 </div>
-                <p className="text-muted-foreground">{user.orgName} · {user.location}</p>
+                <p className="text-muted-foreground">
+                  {user?.orgName || "—"} · {user?.location?.address || "—"}
+                </p>
                 <div className="flex items-center gap-4 justify-center sm:justify-start">
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-warning text-warning" />
-                    <span className="font-semibold">{user.trustScore}</span>
-                    <span className="text-muted-foreground text-sm">({user.totalRatings} ratings)</span>
+                    <span className="font-semibold">{user?.trustScore ?? "—"}</span>
+                    <span className="text-muted-foreground text-sm">
+                      ({ratings.length} ratings)
+                    </span>
                   </div>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Package className="h-4 w-4" /> {user.totalRescues} rescues
+                    <Package className="h-4 w-4" /> {user?.totalRescues ?? 0} rescues
                   </div>
                 </div>
+                <p className="text-sm text-muted-foreground">{user?.email}</p>
+                <p className="text-sm text-muted-foreground">{user?.phone}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Badges */}
         <Card>
           <CardHeader><CardTitle className="text-lg">Badges & Achievements</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
@@ -71,7 +79,6 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Ratings */}
         <Card>
           <CardHeader><CardTitle className="text-lg">Reviews</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -86,7 +93,9 @@ export default function ProfilePage() {
                         <Star key={i} className={`h-3.5 w-3.5 ${i < r.score ? "fill-warning text-warning" : "text-muted"}`} />
                       ))}
                     </div>
-                    <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString("en-IN")}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(r.createdAt).toLocaleDateString("en-IN")}
+                    </span>
                   </div>
                   <p className="text-sm mt-1">{r.review}</p>
                 </div>

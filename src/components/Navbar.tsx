@@ -12,8 +12,11 @@ interface NavbarProps {
   onLogout?: () => void;
 }
 
-export function Navbar({ userName = "Priya Sharma", userRole, onLogout }: NavbarProps) {
+export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const stored = localStorage.getItem("foodbridge_user");
+  const user = stored ? JSON.parse(stored) : null;
+  const displayName = userName || user?.name || "User";
   const location = useLocation();
   const isLanding = location.pathname === "/";
   const isAuth = ["/login", "/register"].includes(location.pathname);
@@ -50,10 +53,10 @@ export function Navbar({ userName = "Priya Sharma", userRole, onLogout }: Navbar
                 <Button variant="ghost" className="flex items-center gap-2 px-2">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                      {userName.split(" ").map((n) => n[0]).join("")}
+                      {displayName.split(" ").map((n) => n[0]).join("")}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:inline text-sm font-medium">{userName}</span>
+                  <span className="hidden sm:inline text-sm font-medium">{displayName}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">

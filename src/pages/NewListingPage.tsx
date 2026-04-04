@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight, MapPin, Check } from "lucide-react";
 import { toast } from "sonner";
 import { createListing } from "@/services/foodService";
+import { User } from "@/types";
 
 const dietaryOptions = ["Veg", "Vegan", "Halal", "Jain", "Contains Allergens"];
 
@@ -19,13 +19,23 @@ export default function NewListingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    foodType: "", category: "cooked" as const, description: "", quantity: "",
-    unit: "kg" as const, dietaryTags: [] as string[], address: "",
-    pickupDate: "", pickupStart: "", pickupEnd: "", specialInstructions: "",
+    foodType: "",
+    category: "cooked" as const,
+    description: "",
+    quantity: "",
+    unit: "kg" as const,
+    dietaryTags: [] as string[],
+    address: "",
+    pickupDate: "",
+    pickupStart: "",
+    pickupEnd: "",
+    specialInstructions: "",
     urgencyLevel: "medium" as const,
   });
 
-  const update = (field: string, value: any) => setForm((p) => ({ ...p, [field]: value }));
+  const update = (field: string, value: any) =>
+    setForm((p) => ({ ...p, [field]: value }));
+
   const toggleTag = (tag: string) => {
     setForm((p) => ({
       ...p,
@@ -36,20 +46,33 @@ export default function NewListingPage() {
   };
 
   const handleSubmit = async () => {
+    const stored = localStorage.getItem("foodbridge_user");
+    const user: User | null = stored ? JSON.parse(stored) : null;
     await createListing({
-      donorId: "u1", donorName: "GreenPlate Catering", foodType: form.foodType,
-      description: form.description, quantity: Number(form.quantity), unit: form.unit,
-      category: form.category, pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
-      pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`, address: form.address,
+      donorId: user?.id || "guest_" + Date.now(),
+      donorName: user?.orgName || user?.name || "Anonymous Donor",
+      foodType: form.foodType,
+      description: form.description,
+      quantity: Number(form.quantity),
+      unit: form.unit,
+      category: form.category,
+      pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
+      pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
+      address: form.address,
       location: { lat: 13.0827, lng: 80.2707, address: form.address },
-      photos: [], dietaryTags: form.dietaryTags, urgencyLevel: form.urgencyLevel, claimedBy: undefined,
+      photos: [],
+      dietaryTags: form.dietaryTags,
+      urgencyLevel: form.urgencyLevel,
+      claimedBy: undefined,
     });
     toast.success("Listing posted successfully!");
     navigate("/donor/listings");
   };
 
   const urgencyColors: Record<string, string> = {
-    low: "border-success text-success", medium: "border-warning text-warning", high: "border-urgent text-urgent",
+    low: "border-success text-success",
+    medium: "border-warning text-warning",
+    high: "border-destructive text-destructive",
   };
 
   return (
@@ -57,7 +80,6 @@ export default function NewListingPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold">Post New Surplus</h1>
 
-        {/* Step indicators */}
         <div className="flex items-center gap-2">
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex items-center gap-2">
@@ -119,12 +141,7 @@ export default function NewListingPage() {
                   <Label>Dietary Tags</Label>
                   <div className="flex flex-wrap gap-2">
                     {dietaryOptions.map((tag) => (
-                      <Badge
-                        key={tag}
-                        variant={form.dietaryTags.includes(tag) ? "default" : "outline"}
-                        className="cursor-pointer"
-                        onClick={() => toggleTag(tag)}
-                      >
+                      <Badge key={tag} variant={form.dietaryTags.includes(tag) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleTag(tag)}>
                         {tag}
                       </Badge>
                     ))}
@@ -145,12 +162,10 @@ export default function NewListingPage() {
                 <div className="space-y-2">
                   <Label>Pickup Address</Label>
                   <div className="flex gap-2">
-                    <Input className="flex-1" placeholder="45, Anna Salai, T. Nagar, Chennai" value={form.address} onChange={(e) => update("address", e.target.value)} />
-                    <Button variant="outline" size="icon" type="button">
-                      <MapPin className="h-4 w-4" />
-                    </Button>
+                    <Input className="flex-1" placeholder="Enter full pickup address" value={form.address} onChange={(e) => update("address", e.target.value)} />
+                    <Button variant="outline" size="icon" type="button"><MapPin className="h-4 w-4" /></Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">Use the pin button to auto-detect your location (Google Maps integration coming soon)</p>
+                  <p className="text-xs text-muted-foreground">Google Maps location picker — coming soon</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Pickup Date</Label>
@@ -170,13 +185,9 @@ export default function NewListingPage() {
                   <Label>Urgency Level</Label>
                   <div className="flex gap-3">
                     {(["low", "medium", "high"] as const).map((level) => (
-                      <Button
-                        key={level}
-                        type="button"
-                        variant="outline"
+                      <Button key={level} type="button" variant="outline"
                         className={`capitalize flex-1 ${form.urgencyLevel === level ? urgencyColors[level] + " border-2" : ""}`}
-                        onClick={() => update("urgencyLevel", level)}
-                      >
+                        onClick={() => update("urgencyLevel", level)}>
                         {level}
                       </Button>
                     ))}
@@ -222,7 +233,6 @@ export default function NewListingPage() {
               </div>
             )}
 
-            {/* Navigation */}
             <div className="flex justify-between pt-4">
               {step > 1 ? (
                 <Button variant="outline" onClick={() => setStep(step - 1)}>

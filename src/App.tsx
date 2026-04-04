@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -18,6 +18,20 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Redirects to correct dashboard based on role
+function RoleRedirect() {
+  const stored = localStorage.getItem("foodbridge_user");
+  const user = stored ? JSON.parse(stored) : null;
+  if (!user) return <Navigate to="/login" replace />;
+  const routes: Record<string, string> = {
+    donor: "/donor/dashboard",
+    collector: "/collector/dashboard",
+    volunteer: "/volunteer/dashboard",
+    admin: "/admin/dashboard",
+  };
+  return <Navigate to={routes[user.role] || "/login"} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -28,6 +42,7 @@ const App = () => (
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/dashboard" element={<RoleRedirect />} />
           <Route path="/donor/dashboard" element={<DonorDashboard />} />
           <Route path="/donor/new-listing" element={<NewListingPage />} />
           <Route path="/donor/listings" element={<MyListingsPage />} />

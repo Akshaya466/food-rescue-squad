@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, MapPin, History, User, Package, PlusCircle, List, LayoutDashboard, BarChart3, Truck } from "lucide-react";
+import { Home, MapPin, History, User, PlusCircle, List, LayoutDashboard, BarChart3 } from "lucide-react";
 
 const roleNavItems: Record<string, { label: string; to: string; icon: React.ElementType }[]> = {
   donor: [
@@ -15,8 +15,7 @@ const roleNavItems: Record<string, { label: string; to: string; icon: React.Elem
   ],
   volunteer: [
     { label: "Home", to: "/volunteer/dashboard", icon: Home },
-    { label: "Map", to: "/collector/map", icon: MapPin },
-    { label: "History", to: "/volunteer/dashboard", icon: History },
+    { label: "Map", to: "/volunteer/dashboard", icon: MapPin },
     { label: "Profile", to: "/profile", icon: User },
   ],
   admin: [
@@ -36,7 +35,7 @@ export function BottomNav({ role = "donor" }: { role?: string }) {
           const active = location.pathname === item.to;
           return (
             <Link
-              key={item.to}
+              key={item.label}
               to={item.to}
               className={`flex flex-col items-center gap-1 px-3 py-2 text-xs font-medium transition-colors ${
                 active ? "text-primary" : "text-muted-foreground"

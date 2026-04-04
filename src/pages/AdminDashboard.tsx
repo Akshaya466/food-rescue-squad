@@ -1,49 +1,75 @@
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Leaf, ChefHat, Users, Building2, Truck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Package, Leaf, ChefHat, Users, Building2, Truck, Trash2 } from "lucide-react";
+import { StatusBadge } from "@/components/FoodBadges";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { getAllListings, deleteListing } from "@/services/foodService";
+import { FoodListing, User } from "@/types";
+import { toast } from "sonner";
 
-const kpis = [
-  { label: "Food Rescued", value: "2,40,000 kg", icon: Package, color: "text-primary" },
-  { label: "CO₂ Offset", value: "48 tons", icon: Leaf, color: "text-success" },
-  { label: "Meals Delivered", value: "8,500+", icon: ChefHat, color: "text-secondary" },
-  { label: "Active Donors", value: "320", icon: Building2, color: "text-info" },
-  { label: "Active NGOs", value: "180", icon: Users, color: "text-warning" },
-  { label: "Volunteers", value: "95", icon: Truck, color: "text-primary" },
-];
-
-const monthlyData = [
-  { month: "Oct", kg: 32000 }, { month: "Nov", kg: 38000 }, { month: "Dec", kg: 41000 },
-  { month: "Jan", kg: 45000 }, { month: "Feb", kg: 39000 }, { month: "Mar", kg: 48000 },
-];
-
-const categoryData = [
-  { name: "Cooked", value: 45 }, { name: "Raw", value: 25 },
-  { name: "Packaged", value: 20 }, { name: "Beverages", value: 10 },
-];
 const COLORS = ["hsl(142, 72%, 29%)", "hsl(24, 95%, 53%)", "hsl(217, 91%, 60%)", "hsl(38, 92%, 50%)"];
 
 const weeklyActivity = [
-  { day: "Mon", listings: 12, deliveries: 8 }, { day: "Tue", listings: 15, deliveries: 11 },
-  { day: "Wed", listings: 10, deliveries: 9 }, { day: "Thu", listings: 18, deliveries: 14 },
-  { day: "Fri", listings: 22, deliveries: 16 }, { day: "Sat", listings: 14, deliveries: 10 },
+  { day: "Mon", listings: 12, deliveries: 8 },
+  { day: "Tue", listings: 15, deliveries: 11 },
+  { day: "Wed", listings: 10, deliveries: 9 },
+  { day: "Thu", listings: 18, deliveries: 14 },
+  { day: "Fri", listings: 22, deliveries: 16 },
+  { day: "Sat", listings: 14, deliveries: 10 },
   { day: "Sun", listings: 8, deliveries: 6 },
 ];
 
-const topDonors = [
-  { name: "Priya Sharma", org: "GreenPlate Catering", kg: 1240, rating: 4.8 },
-  { name: "Rahul Menon", org: "Taj Banquets", kg: 980, rating: 4.7 },
-  { name: "Anita Das", org: "FreshBasket", kg: 870, rating: 4.9 },
-  { name: "Karthik S.", org: "Bombay Bakers", kg: 650, rating: 4.6 },
-];
-
-const topCollectors = [
-  { name: "Helping Hands NGO", rescued: "2,100 kg", rating: 4.9 },
-  { name: "Feed Chennai", rescued: "1,850 kg", rating: 4.8 },
-  { name: "Amma Unavagam", rescued: "1,400 kg", rating: 4.7 },
-];
-
 export default function AdminDashboard() {
+  const [listings, setListings] = useState<FoodListing[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<FoodListing | null>(null);
+
+  useEffect(() => {
+    getAllListings().then(setListings);
+    const storedUsers = localStorage.getItem("foodbridge_users");
+    if (storedUsers) setUsers(JSON.parse(storedUsers));
+  }, []);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await deleteListing(deleteTarget.id);
+    setListings((p) => p.filter((l) => l.id !== deleteTarget.id));
+    setDeleteTarget(null);
+    toast.success("Listing deleted");
+  };
+
+  const totalKg = listings.reduce((s, l) => s + (l.unit === "kg" ? l.quantity : 0), 0);
+  const activeListings = listings.filter(l => l.status === "active").length;
+  const deliveredListings = listings.filter(l => l.status === "delivered").length;
+  const donors = users.filter(u => u.role === "donor");
+  const collectors = users.filter(u => u.role === "collector");
+  const volunteers = users.filter(u => u.role === "volunteer");
+
+  const kpis = [
+    { label: "Food Rescued", value: `${totalKg} kg`, icon: Package, color: "text-primary" },
+    { label: "Active Listings", value: activeListings.toString(), icon: Leaf, color: "text-success" },
+    { label: "Delivered", value: deliveredListings.toString(), icon: ChefHat, color: "text-secondary" },
+    { label: "Donors", value: donors.length.toString(), icon: Building2, color: "text-info" },
+    { label: "Collectors", value: collectors.length.toString(), icon: Users, color: "text-warning" },
+    { label: "Volunteers", value: volunteers.length.toString(), icon: Truck, color: "text-primary" },
+  ];
+
+  const categoryData = [
+    { name: "Cooked", value: listings.filter(l => l.category === "cooked").length || 1 },
+    { name: "Raw", value: listings.filter(l => l.category === "raw").length || 1 },
+    { name: "Packaged", value: listings.filter(l => l.category === "packaged").length || 1 },
+    { name: "Beverages", value: listings.filter(l => l.category === "beverages").length || 1 },
+  ];
+
+  const monthlyData = [
+    { month: "Oct", kg: 32000 }, { month: "Nov", kg: 38000 },
+    { month: "Dec", kg: 41000 }, { month: "Jan", kg: 45000 },
+    { month: "Feb", kg: 39000 }, { month: "Mar", kg: totalKg || 48000 },
+  ];
+
   return (
     <DashboardLayout role="admin">
       <div className="space-y-6">
@@ -63,7 +89,6 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Monthly Bar Chart */}
           <Card>
             <CardHeader><CardTitle className="text-lg">Monthly Food Rescued (kg)</CardTitle></CardHeader>
             <CardContent>
@@ -79,13 +104,13 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
 
-          {/* Pie Chart */}
           <Card>
             <CardHeader><CardTitle className="text-lg">Food Categories</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
-                  <Pie data={categoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                  <Pie data={categoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                     {categoryData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
                   </Pie>
                   <Tooltip />
@@ -95,7 +120,6 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
-        {/* Weekly Line */}
         <Card>
           <CardHeader><CardTitle className="text-lg">Weekly Activity</CardTitle></CardHeader>
           <CardContent>
@@ -112,59 +136,108 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Top Donors */}
-          <Card>
-            <CardHeader><CardTitle className="text-lg">Top Donors</CardTitle></CardHeader>
-            <CardContent>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-muted-foreground text-left">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Org</th>
-                    <th className="pb-2 font-medium">kg</th>
-                    <th className="pb-2 font-medium">Rating</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topDonors.map((d, i) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="py-2 font-medium">{d.name}</td>
-                      <td className="py-2 text-muted-foreground">{d.org}</td>
-                      <td className="py-2">{d.kg}</td>
-                      <td className="py-2 text-warning">{d.rating} ★</td>
+        {/* All Listings with Delete */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">All Listings ({listings.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {listings.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">No listings yet</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground text-left bg-muted/50">
+                      <th className="p-4 font-medium">Food</th>
+                      <th className="p-4 font-medium">Donor</th>
+                      <th className="p-4 font-medium">Qty</th>
+                      <th className="p-4 font-medium">Status</th>
+                      <th className="p-4 font-medium">Posted</th>
+                      <th className="p-4 font-medium">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+                  </thead>
+                  <tbody>
+                    {listings.map((l) => (
+                      <tr key={l.id} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="p-4 font-medium">{l.foodType}</td>
+                        <td className="p-4 text-muted-foreground">{l.donorName}</td>
+                        <td className="p-4">{l.quantity} {l.unit}</td>
+                        <td className="p-4"><StatusBadge status={l.status} /></td>
+                        <td className="p-4 text-muted-foreground text-xs">
+                          {new Date(l.createdAt).toLocaleDateString("en-IN")}
+                        </td>
+                        <td className="p-4">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"
+                            onClick={() => setDeleteTarget(l)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Top Collectors */}
-          <Card>
-            <CardHeader><CardTitle className="text-lg">Top Collectors</CardTitle></CardHeader>
-            <CardContent>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-muted-foreground text-left">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Rescued</th>
-                    <th className="pb-2 font-medium">Rating</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topCollectors.map((c, i) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="py-2 font-medium">{c.name}</td>
-                      <td className="py-2 text-muted-foreground">{c.rescued}</td>
-                      <td className="py-2 text-warning">{c.rating} ★</td>
+        {/* Registered Users */}
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Registered Users ({users.length})</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            {users.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">No registered users yet</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground text-left bg-muted/50">
+                      <th className="p-4 font-medium">Name</th>
+                      <th className="p-4 font-medium">Email</th>
+                      <th className="p-4 font-medium">Role</th>
+                      <th className="p-4 font-medium">Org</th>
+                      <th className="p-4 font-medium">Joined</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </div>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => (
+                      <tr key={u.id} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="p-4 font-medium">{u.name}</td>
+                        <td className="p-4 text-muted-foreground">{u.email}</td>
+                        <td className="p-4 capitalize">{u.role}</td>
+                        <td className="p-4 text-muted-foreground">{u.orgName || "—"}</td>
+                        <td className="p-4 text-muted-foreground text-xs">
+                          {new Date(u.createdAt).toLocaleDateString("en-IN")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Delete Modal */}
+        <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Delete Listing</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <span className="font-semibold text-foreground">"{deleteTarget?.foodType}"</span>? This cannot be undone.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

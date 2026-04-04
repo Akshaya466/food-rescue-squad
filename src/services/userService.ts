@@ -1,35 +1,54 @@
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  orderBy,
+} from "firebase/firestore";
+import { db } from "@/config/firebase";
 import { User, Rating } from "@/types";
 
-const mockRatings: Rating[] = [
-  { id: "r1", fromUserId: "c1", toUserId: "u1", listingId: "fl5", score: 5, review: "Always on time, food quality is excellent!", createdAt: "2025-03-10" },
-  { id: "r2", fromUserId: "v1", toUserId: "u1", listingId: "fl4", score: 4, review: "Well-packed food, easy pickup process.", createdAt: "2025-03-08" },
-  { id: "r3", fromUserId: "u1", toUserId: "c1", listingId: "fl5", score: 5, review: "Quick and reliable collector. Great work!", createdAt: "2025-03-10" },
-];
-
 export async function getUserProfile(userId: string): Promise<User | null> {
-  // TODO: Replace with Firestore doc read
-  if (userId === "u1") {
-    return {
-      id: "u1", name: "Priya Sharma", email: "priya@greenplate.in", role: "donor",
-      orgName: "GreenPlate Catering", phone: "+91 98765 43210",
-      location: { lat: 13.0827, lng: 80.2707, address: "T. Nagar, Chennai" },
-      trustScore: 4.8, totalRescues: 124, isVerified: true, createdAt: "2024-06-15",
-    };
-  }
-  return null;
+  const snap = await getDoc(doc(db, "users", userId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as User;
 }
 
-export async function updateUserProfile(_userId: string, _data: Partial<User>): Promise<User> {
-  // TODO: Replace with Firestore doc update
-  return {} as User;
+export async function updateUserProfile(
+  userId: string,
+  data: Partial<User>
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId), data);
+  // Update localStorage too
+  const stored = localStorage.getItem("foodbridge_user");
+  if (stored) {
+    const user = JSON.parse(stored);
+    localStorage.setItem("foodbridge_user", JSON.stringify({ ...user, ...data }));
+  }
 }
 
 export async function getUserRatings(userId: string): Promise<Rating[]> {
-  return mockRatings.filter((r) => r.toUserId === userId);
+  const snap = await getDocs(
+    query(
+      collection(db, "ratings"),
+      where("toUserId", "==", userId),
+      orderBy("createdAt", "desc")
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Rating));
 }
 
-export async function submitRating(rating: Omit<Rating, "id" | "createdAt">): Promise<Rating> {
-  const newRating: Rating = { ...rating, id: "r_" + Date.now(), createdAt: new Date().toISOString() };
-  mockRatings.push(newRating);
-  return newRating;
+export async function submitRating(data: Omit<Rating, "id">): Promise<Rating> {
+  const docRef = await addDoc(collection(db, "ratings"), data);
+
+  // Update user trust score
+  const ratings = await getUserRatings(data.toUserId);
+  const avg = ratings.reduce((s, r) => s + r.score, data.score) / (ratings.length + 1);
+  await updateDoc(doc(db, "users", data.toUserId), { trustScore: Math.round(avg * 10) / 10 });
+
+  return { ...data, id: docRef.id };
 }

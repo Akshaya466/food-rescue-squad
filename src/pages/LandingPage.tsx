@@ -178,19 +178,80 @@ export default function LandingPage() {
       </section>
 
       {/* Map Teaser */}
-      <section className="py-20 bg-muted/50">
-        <div className="container">
-          <div className="max-w-3xl mx-auto text-center space-y-6">
-            <div className="relative rounded-2xl overflow-hidden bg-card border aspect-video flex items-center justify-center">
-              <MapPin className="h-16 w-16 text-primary/20" />
-              <Badge className="absolute top-4 right-4 bg-primary text-primary-foreground animate-pulse-slow">
-                🔴 Live Map
-              </Badge>
-              <p className="absolute bottom-6 text-muted-foreground text-sm">Interactive map coming soon — see food rescues happening in real time</p>
-            </div>
-          </div>
+<section className="py-20 bg-muted/50">
+  <div className="container">
+    <div className="max-w-3xl mx-auto text-center space-y-6">
+      <h2 className="text-3xl font-bold">Food Rescues Happening Right Now</h2>
+      <p className="text-muted-foreground">See live food listings across your city — claim before they expire</p>
+      <div className="relative rounded-2xl overflow-hidden border aspect-video"
+        style={{
+          background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%)",
+        }}
+      >
+        {/* Fake map grid lines */}
+        <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#16A34A" strokeWidth="0.5"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+        </svg>
+
+        {/* Fake road lines */}
+        <svg className="absolute inset-0 w-full h-full opacity-30" xmlns="http://www.w3.org/2000/svg">
+          <line x1="0" y1="40%" x2="100%" y2="40%" stroke="#16A34A" strokeWidth="2"/>
+          <line x1="0" y1="70%" x2="100%" y2="70%" stroke="#16A34A" strokeWidth="1"/>
+          <line x1="30%" y1="0" x2="30%" y2="100%" stroke="#16A34A" strokeWidth="2"/>
+          <line x1="65%" y1="0" x2="65%" y2="100%" stroke="#16A34A" strokeWidth="1"/>
+        </svg>
+
+        {/* Animated food pins */}
+        <div className="absolute top-[30%] left-[25%] flex flex-col items-center animate-bounce">
+          <div className="bg-primary text-white text-xs px-2 py-1 rounded-lg font-semibold shadow-lg">🍱 15 kg</div>
+          <div className="w-0.5 h-3 bg-primary"></div>
+          <div className="w-2 h-2 rounded-full bg-primary"></div>
         </div>
-      </section>
+
+        <div className="absolute top-[55%] left-[60%] flex flex-col items-center animate-bounce" style={{ animationDelay: "0.3s" }}>
+          <div className="bg-orange-500 text-white text-xs px-2 py-1 rounded-lg font-semibold shadow-lg">🥘 30 portions</div>
+          <div className="w-0.5 h-3 bg-orange-500"></div>
+          <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+        </div>
+
+        <div className="absolute top-[20%] left-[60%] flex flex-col items-center animate-bounce" style={{ animationDelay: "0.6s" }}>
+          <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-lg font-semibold shadow-lg">⚡ Urgent!</div>
+          <div className="w-0.5 h-3 bg-red-500"></div>
+          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+        </div>
+
+        <div className="absolute top-[65%] left-[35%] flex flex-col items-center animate-bounce" style={{ animationDelay: "0.9s" }}>
+          <div className="bg-primary text-white text-xs px-2 py-1 rounded-lg font-semibold shadow-lg">🍞 40 packets</div>
+          <div className="w-0.5 h-3 bg-primary"></div>
+          <div className="w-2 h-2 rounded-full bg-primary"></div>
+        </div>
+
+        {/* Live badge */}
+        <Badge className="absolute top-4 right-4 bg-red-500 text-white animate-pulse">
+          🔴 Live Map
+        </Badge>
+
+        {/* Bottom label */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/40 to-transparent p-4">
+          <p className="text-white text-sm font-medium">
+            🗺️ Real-time food rescue map — Chennai, Mumbai, Delhi & more
+          </p>
+        </div>
+      </div>
+
+      <Link to="/register">
+        <Button size="lg" className="gap-2">
+          View Live Map <ArrowRight className="h-4 w-4" />
+        </Button>
+      </Link>
+    </div>
+  </div>
+</section>
 
       {/* Footer */}
       <footer className="border-t bg-card py-12">
