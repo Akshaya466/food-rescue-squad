@@ -97,7 +97,7 @@ export default function LoginPage() {
             </div>
           </Link>
           <CardTitle className="text-2xl">Welcome Back</CardTitle>
-          <CardDescription>Sign in to your FoodBridge account</CardDescription>
+          <CardDescription>Sign in to your Annora account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <Tabs value={role} onValueChange={setRole}>
@@ -161,7 +161,7 @@ export default function LoginPage() {
           <DialogHeader>
             <DialogTitle>Select your role</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">How will you use FoodBridge?</p>
+          <p className="text-sm text-muted-foreground">How will you use Annora?</p>
           <div className="space-y-2">
             {["donor", "collector", "volunteer"].map((r) => (
               <button

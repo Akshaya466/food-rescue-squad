@@ -30,7 +30,7 @@ export function Navbar({ userName = "User", userRole, onLogout }: NavbarProps) {
           <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
             <Leaf className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold tracking-tight">FoodBridge</span>
+          <span className="text-xl font-bold tracking-tight">Annora</span>
         </Link>
         {isLanding ? (
           <>
