@@ -15,6 +15,9 @@ import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from
 import { getAllListings } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
+import { auth } from "@/config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { getUserProfile } from "@/services/userService";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -78,32 +81,26 @@ export default function CollectorDashboard() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-  const stored = localStorage.getItem("foodbridge_user");
-  const u = stored ? JSON.parse(stored) : null;
-  setUser(u);
-
-  // Real-time subscription
-  const unsubscribe = subscribeToListings((data) => {
-    setListings(data.filter((l) => l.status === "active"));
-    if (u) {
-      setClaimedListings(
-        data.filter((l) => l.claimedBy === u.id)
-      );
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const profile = await getUserProfile(firebaseUser.uid);
+      setUser(profile);
+      const unsubscribe = subscribeToListings((data) => {
+        setListings(data.filter((l) => l.status === "active"));
+        setClaimedListings(data.filter((l) => l.claimedBy === firebaseUser.uid));
+      });
+      return () => unsubscribe();
     }
   });
-
-  return () => unsubscribe();
+  return () => unsubscribeAuth();
 }, []);
-  
 const handleClaim = async (id: string) => {
-  if (!user) return;
-  await claimListing(id, user.id);
+  if (!user || !auth.currentUser) return;
+  await claimListing(id, auth.currentUser.uid);
   const claimed = listings.find(l => l.id === id);
   if (claimed) {
     setListings((p) => p.filter((l) => l.id !== id));
-    setClaimedListings((p) => [...p, { ...claimed, status: "claimed", claimedBy: user.id }]);
-
-    // Create delivery for volunteers
+    setClaimedListings((p) => [...p, { ...claimed, status: "claimed", claimedBy: auth.currentUser!.uid }]);
     await createDelivery({
       listingId: claimed.id,
       volunteerId: "unassigned",
@@ -115,8 +112,6 @@ const handleClaim = async (id: string) => {
       distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
       foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
     });
-
-    // Notify donor
     await createNotification({
       userId: claimed.donorId,
       type: "claim",

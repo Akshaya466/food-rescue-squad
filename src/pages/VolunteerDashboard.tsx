@@ -9,7 +9,11 @@ import { MapPin, Phone, ChevronRight, Flame, Package, Truck, CheckCircle, Naviga
 import { subscribeToUnassignedDeliveries, subscribeToDeliveryHistory, updateDeliveryStatus } from "@/services/deliveryService";
 import { Delivery, User } from "@/types";
 import { toast } from "sonner";
-
+import { auth } from "@/config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { getUserProfile } from "@/services/userService";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "@/config/firebase";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -59,31 +63,26 @@ export default function VolunteerDashboard() {
   const [currentLocation, setCurrentLocation] = useState<[number, number]>([13.0827, 80.2707]);
 
   useEffect(() => {
-  const stored = localStorage.getItem("foodbridge_user");
-  if (stored) {
-    const u = JSON.parse(stored);
-    setUser(u);
-
-    // Real-time active deliveries
-    const unsubscribeActive = subscribeToUnassignedDeliveries(setActive);
-
-    // Real-time history
-    const unsubscribeHistory = subscribeToDeliveryHistory(u.id, setHistory);
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
-        () => setCurrentLocation([13.0827, 80.2707])
-      );
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const profile = await getUserProfile(firebaseUser.uid);
+      setUser(profile);
+      const unsubscribeActive = subscribeToUnassignedDeliveries(setActive);
+      const unsubscribeHistory = subscribeToDeliveryHistory(firebaseUser.uid, setHistory);
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
+          () => setCurrentLocation([13.0827, 80.2707])
+        );
+      }
+      return () => {
+        unsubscribeActive();
+        unsubscribeHistory();
+      };
     }
-
-    return () => {
-      unsubscribeActive();
-      unsubscribeHistory();
-    };
-  }
+  });
+  return () => unsubscribeAuth();
 }, []);
-
   const advanceStatus = async (delivery: Delivery) => {
     const idx = statusPipeline.indexOf(delivery.status);
     if (idx >= statusPipeline.length - 1) return;
@@ -93,14 +92,7 @@ export default function VolunteerDashboard() {
 
     // Assign volunteer when they start
     if (delivery.volunteerId === "unassigned" && user) {
-      const deliveries: Delivery[] = JSON.parse(
-        localStorage.getItem("Annora_deliveries") || "[]"
-      );
-      const didx = deliveries.findIndex((d) => d.id === delivery.id);
-      if (didx !== -1) {
-        deliveries[didx].volunteerId = user.id;
-        localStorage.setItem("Annora_deliveries", JSON.stringify(deliveries));
-      }
+      await updateDoc(doc(db, "deliveries", delivery.id), { volunteerId: user.id });
     }
 
     if (next === "delivered") {

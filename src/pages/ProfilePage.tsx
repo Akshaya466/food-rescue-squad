@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Star, CheckCircle, Award, Package, Heart, Shield, Pencil } from "lucide-react";
-import { getUserRatings, updateUserProfile, submitRating } from "@/services/userService";
+import { getUserProfile, getUserRatings, updateUserProfile, submitRating } from "@/services/userService";
 import { useState, useEffect } from "react";
 import { Rating, User } from "@/types";
 import { toast } from "sonner";
+import { auth } from "@/config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function ProfilePage() {
   const [ratings, setRatings] = useState<Rating[]>([]);
@@ -22,19 +24,23 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("Annora_user");
-    if (stored) {
-      const u = JSON.parse(stored);
-      setUser(u);
-      setEditForm({
-        name: u.name || "",
-        phone: u.phone || "",
-        orgName: u.orgName || "",
-        address: u.location?.address || "",
-      });
-      getUserRatings(u.id).then(setRatings).catch(() => setRatings([]));
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const profile = await getUserProfile(firebaseUser.uid);
+      setUser(profile);
+      if (profile) {
+        setEditForm({
+          name: profile.name || "",
+          phone: profile.phone || "",
+          orgName: profile.orgName || "",
+          address: profile.location?.address || "",
+        });
+        getUserRatings(firebaseUser.uid).then(setRatings).catch(() => setRatings([]));
+      }
     }
-  }, []);
+  });
+  return () => unsubscribeAuth();
+}, []);
 
   const handleSaveProfile = async () => {
     if (!user) return;

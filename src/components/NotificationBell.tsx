@@ -5,26 +5,35 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { subscribeToNotifications, markAllNotificationsRead } from "@/services/notificationService";
+import { auth } from "@/config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("Annora_user");
-    const user = stored ? JSON.parse(stored) : null;
-    if (!user) return;
-
-    const unsubscribe = subscribeToNotifications(user.id, setNotifications);
-    return () => unsubscribe();
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUserId(firebaseUser.uid);
+        const unsubscribeNotifs = subscribeToNotifications(
+          firebaseUser.uid,
+          setNotifications
+        );
+        return () => unsubscribeNotifs();
+      } else {
+        setUserId(null);
+        setNotifications([]);
+      }
+    });
+    return () => unsubscribeAuth();
   }, []);
 
   const unread = notifications.filter((n) => !n.isRead).length;
 
   const markAllRead = async () => {
-    const stored = localStorage.getItem("Annora_user");
-    const user = stored ? JSON.parse(stored) : null;
-    if (!user) return;
-    await markAllNotificationsRead(user.id);
+    if (!userId) return;
+    await markAllNotificationsRead(userId);
   };
 
   const timeAgo = (date: string) => {

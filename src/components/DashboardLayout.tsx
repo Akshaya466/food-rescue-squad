@@ -3,6 +3,8 @@ import { Navbar } from "@/components/Navbar";
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { BottomNav } from "@/components/BottomNav";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useauth";
+import { logoutUser } from "@/services/authService";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -11,12 +13,10 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, role = "donor" }: DashboardLayoutProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const stored = localStorage.getItem("Annora_user");
-  const user = stored ? JSON.parse(stored) : null;
-
-  const handleLogout = () => {
-    localStorage.removeItem("Annora_user");
+  const handleLogout = async () => {
+    await logoutUser();
     navigate("/login");
   };
 
@@ -28,12 +28,12 @@ export function DashboardLayout({ children, role = "donor" }: DashboardLayoutPro
         onLogout={handleLogout}
       />
       <div className="flex flex-1">
-        <DashboardSidebar role={role} />
+        <DashboardSidebar role={user?.role || role} />
         <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6 overflow-auto">
           {children}
         </main>
       </div>
-      <BottomNav role={role} />
+      <BottomNav role={user?.role || role} />
     </div>
   );
 }

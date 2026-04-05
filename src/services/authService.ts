@@ -39,9 +39,6 @@ export async function registerUser(data: {
   // Save to Firestore
   await setDoc(doc(db, "users", cred.user.uid), user);
 
-  // Save to localStorage as current user
-  localStorage.setItem("Annora_user", JSON.stringify(user));
-
   return user;
 }
 
@@ -53,22 +50,14 @@ export async function loginUser(email: string, password: string): Promise<User> 
   if (!snap.exists()) throw new Error("User profile not found");
 
   const user = snap.data() as User;
-
-  // Save to localStorage
-  localStorage.setItem("Annora_user", JSON.stringify(user));
-
   return user;
 }
 
 export async function logoutUser(): Promise<void> {
   await signOut(auth);
-  localStorage.removeItem("Annora_user");
+  
 }
 
-export function getCurrentUser(): User | null {
-  const stored = localStorage.getItem("Annora_user");
-  return stored ? JSON.parse(stored) : null;
-}
 
 export function onUserStateChanged(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
@@ -76,13 +65,12 @@ export function onUserStateChanged(callback: (user: User | null) => void) {
       const snap = await getDoc(doc(db, "users", firebaseUser.uid));
       if (snap.exists()) {
         const user = snap.data() as User;
-        localStorage.setItem("Annora_user", JSON.stringify(user));
+        
         callback(user);
       } else {
         callback(null);
       }
     } else {
-      localStorage.removeItem("Annora_user");
       callback(null);
     }
   });
@@ -117,7 +105,5 @@ export async function signInWithGoogle(): Promise<User> {
     };
     await setDoc(doc(db, "users", cred.user.uid), user);
   }
-
-  localStorage.setItem("foodbridge_user", JSON.stringify(user));
   return user;
 }

@@ -15,21 +15,37 @@ import VolunteerDashboard from "./pages/VolunteerDashboard";
 import ProfilePage from "./pages/ProfilePage";
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
+import { useState, useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/config/firebase";
+import { getUserProfile } from "@/services/userService";
 
 const queryClient = new QueryClient();
 
 // Redirects to correct dashboard based on role
 function RoleRedirect() {
-  const stored = localStorage.getItem("Annora_user");
-  const user = stored ? JSON.parse(stored) : null;
-  if (!user) return <Navigate to="/login" replace />;
-  const routes: Record<string, string> = {
-    donor: "/donor/dashboard",
-    collector: "/collector/dashboard",
-    volunteer: "/volunteer/dashboard",
-    admin: "/admin/dashboard",
-  };
-  return <Navigate to={routes[user.role] || "/login"} replace />;
+  const [checking, setChecking] = useState(true);
+  const [route, setRoute] = useState("/login");
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const profile = await getUserProfile(firebaseUser.uid);
+        const routes: Record<string, string> = {
+          donor: "/donor/dashboard",
+          collector: "/collector/dashboard",
+          volunteer: "/volunteer/dashboard",
+          admin: "/admin/dashboard",
+        };
+        setRoute(routes[profile?.role || "donor"]);
+      }
+      setChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (checking) return null;
+  return <Navigate to={route} replace />;
 }
 
 const App = () => (

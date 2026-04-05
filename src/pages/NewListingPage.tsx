@@ -12,6 +12,8 @@ import { ArrowLeft, ArrowRight, MapPin, Check } from "lucide-react";
 import { toast } from "sonner";
 import { createListing } from "@/services/foodService";
 import { User } from "@/types";
+import { auth } from "@/config/firebase";
+import { getUserProfile } from "@/services/userService";
 
 const dietaryOptions = ["Veg", "Vegan", "Halal", "Jain", "Contains Allergens"];
 
@@ -46,28 +48,33 @@ export default function NewListingPage() {
   };
 
   const handleSubmit = async () => {
-    const stored = localStorage.getItem("Annora_user");
-    const user: User | null = stored ? JSON.parse(stored) : null;
-    await createListing({
-      donorId: user?.id || "guest_" + Date.now(),
-      donorName: user?.orgName || user?.name || "Anonymous Donor",
-      foodType: form.foodType,
-      description: form.description,
-      quantity: Number(form.quantity),
-      unit: form.unit,
-      category: form.category,
-      pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
-      pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
-      address: form.address,
-      location: { lat: 13.0827, lng: 80.2707, address: form.address },
-      photos: [],
-      dietaryTags: form.dietaryTags,
-      urgencyLevel: form.urgencyLevel,
-      claimedBy: null,
-    });
-    toast.success("Listing posted successfully!");
-    navigate("/donor/listings");
-  };
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) {
+    toast.error("You must be logged in to post a listing.");
+    return;
+  }
+  const profile = await getUserProfile(firebaseUser.uid);
+
+  await createListing({
+    donorId: firebaseUser.uid,
+    donorName: profile?.orgName || profile?.name || "Anonymous Donor",
+    foodType: form.foodType,
+    description: form.description,
+    quantity: Number(form.quantity),
+    unit: form.unit,
+    category: form.category,
+    pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
+    pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
+    address: form.address,
+    location: { lat: 13.0827, lng: 80.2707, address: form.address },
+    photos: [],
+    dietaryTags: form.dietaryTags,
+    urgencyLevel: form.urgencyLevel,
+    claimedBy: null,
+  });
+  toast.success("Listing posted successfully!");
+  navigate("/donor/listings");
+};
 
   const urgencyColors: Record<string, string> = {
     low: "border-success text-success",

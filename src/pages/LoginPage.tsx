@@ -82,7 +82,6 @@ export default function LoginPage() {
     if (!googleUser) return;
     await updateUserProfile(googleUser.id, { role: selectedRole as any });
     const updated = { ...googleUser, role: selectedRole as any };
-    localStorage.setItem("foodbridge_user", JSON.stringify(updated));
     setRoleModal(false);
     toast.success(`Welcome, ${googleUser.name}!`);
     navigate(routes[selectedRole] || "/donor/dashboard");

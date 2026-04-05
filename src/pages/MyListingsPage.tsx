@@ -13,6 +13,10 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { getListingsByDonor, deleteListing, updateListing } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
+import { auth } from "@/config/firebase";
+import { getUserProfile } from "@/services/userService";
+import { onAuthStateChanged } from "firebase/auth";
+import { subscribeToListingsByDonor } from "@/services/foodService";
 
 export default function MyListingsPage() {
   const [listings, setListings] = useState<FoodListing[]>([]);
@@ -20,11 +24,23 @@ export default function MyListingsPage() {
   const [editTarget, setEditTarget] = useState<FoodListing | null>(null);
   const [viewTarget, setViewTarget] = useState<FoodListing | null>(null);
   const [editForm, setEditForm] = useState<Partial<FoodListing>>({});
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-  const stored = localStorage.getItem("Annora_user");
-  const user: User | null = stored ? JSON.parse(stored) : null;
-  if (user) getListingsByDonor(user.id).then(setListings);
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const profile = await getUserProfile(firebaseUser.uid);
+      if (profile) {
+        setUser(profile);
+        const unsubscribeListings = subscribeToListingsByDonor(
+          firebaseUser.uid,
+          setListings
+        );
+        return () => unsubscribeListings();
+      }
+    }
+  });
+  return () => unsubscribeAuth();
 }, []);
 
   const handleDelete = async () => {

@@ -23,12 +23,7 @@ export async function updateUserProfile(
   data: Partial<User>
 ): Promise<void> {
   await updateDoc(doc(db, "users", userId), data);
-  // Update localStorage too
-  const stored = localStorage.getItem("Annora_user");
-  if (stored) {
-    const user = JSON.parse(stored);
-    localStorage.setItem("Annora_user", JSON.stringify({ ...user, ...data }));
-  }
+  
 }
 
 export async function getUserRatings(userId: string): Promise<Rating[]> {

@@ -9,6 +9,9 @@ import { MapPin, Package } from "lucide-react";
 import { getAllListings, claimListing } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
+import { auth } from "@/config/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { getUserProfile } from "@/services/userService";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,18 +48,24 @@ export default function CollectorMapPage() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("Annora_user");
-    const u = stored ? JSON.parse(stored) : null;
-    setUser(u);
-    getAllListings().then((data) => setListings(data.filter((l) => l.status === "active")));
-  }, []);
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const profile = await getUserProfile(firebaseUser.uid);
+      setUser(profile);
+      getAllListings().then((data) =>
+        setListings(data.filter((l) => l.status === "active"))
+      );
+    }
+  });
+  return () => unsubscribeAuth();
+}, []);
 
   const handleClaim = async (id: string) => {
-    if (!user) return;
-    await claimListing(id, user.id);
-    setListings((p) => p.filter((l) => l.id !== id));
-    toast.success("Food claimed successfully!");
-  };
+  if (!auth.currentUser) return;
+  await claimListing(id, auth.currentUser.uid);
+  setListings((p) => p.filter((l) => l.id !== id));
+  toast.success("Food claimed successfully!");
+};
 
   return (
     <DashboardLayout role="collector">

@@ -12,16 +12,16 @@ interface NavbarProps {
   onLogout?: () => void;
 }
 
-export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
+export function Navbar({ userName = "User", userRole, onLogout }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const stored = localStorage.getItem("Annora_user");
-  const user = stored ? JSON.parse(stored) : null;
-  const displayName = userName || user?.name || "User";
   const location = useLocation();
   const isLanding = location.pathname === "/";
   const isAuth = ["/login", "/register"].includes(location.pathname);
-
   if (isAuth) return null;
+
+  const initials = userName
+    ? userName.split(" ").map((n) => n[0]).join("").toUpperCase()
+    : "U";
 
   return (
     <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-md">
@@ -30,9 +30,8 @@ export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
           <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
             <Leaf className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold tracking-tight">Annora</span>
+          <span className="text-xl font-bold tracking-tight">FoodBridge</span>
         </Link>
-
         {isLanding ? (
           <>
             <nav className="hidden md:flex items-center gap-6">
@@ -53,15 +52,17 @@ export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
                 <Button variant="ghost" className="flex items-center gap-2 px-2">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                      {displayName.split(" ").map((n) => n[0]).join("")}
+                      {initials}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:inline text-sm font-medium">{displayName}</span>
+                  <span className="hidden sm:inline text-sm font-medium">{userName}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
-                  <Link to="/profile" className="flex items-center gap-2"><User className="h-4 w-4" /> Profile</Link>
+                  <Link to="/profile" className="flex items-center gap-2">
+                    <User className="h-4 w-4" /> Profile
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={onLogout} className="flex items-center gap-2">
                   <LogOut className="h-4 w-4" /> Sign Out

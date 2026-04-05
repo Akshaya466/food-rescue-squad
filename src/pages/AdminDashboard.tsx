@@ -9,6 +9,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { getAllListings, deleteListing } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
+import { db } from "@/config/firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 const COLORS = ["hsl(142, 72%, 29%)", "hsl(24, 95%, 53%)", "hsl(217, 91%, 60%)", "hsl(38, 92%, 50%)"];
 
@@ -28,10 +30,11 @@ export default function AdminDashboard() {
   const [deleteTarget, setDeleteTarget] = useState<FoodListing | null>(null);
 
   useEffect(() => {
-    getAllListings().then(setListings);
-    const storedUsers = localStorage.getItem("Annora_users");
-    if (storedUsers) setUsers(JSON.parse(storedUsers));
-  }, []);
+  getAllListings().then(setListings);
+  getDocs(collection(db, "users")).then((snap) => {
+    setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as User)));
+  });
+}, []);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
