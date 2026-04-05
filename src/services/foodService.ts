@@ -19,7 +19,6 @@ const COL = "listings";
 export async function createListing(
   data: Omit<FoodListing, "id" | "createdAt" | "status">
 ): Promise<FoodListing> {
-  // Remove all undefined values — Firestore rejects them
   const clean = JSON.parse(JSON.stringify({
     ...data,
     status: "active",
@@ -31,16 +30,8 @@ export async function createListing(
 }
 
 export async function getAllListings(): Promise<FoodListing[]> {
-  try {
-    const snap = await getDocs(
-      query(collection(db, COL), orderBy("createdAt", "desc"))
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-  } catch {
-    // Fallback without orderBy while index is building
-    const snap = await getDocs(collection(db, COL));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-  }
+  const snap = await getDocs(collection(db, COL));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
 }
 
 export async function getListingById(id: string): Promise<FoodListing | undefined> {
@@ -53,7 +44,8 @@ export async function updateListing(
   id: string,
   data: Partial<FoodListing>
 ): Promise<FoodListing> {
-  await updateDoc(doc(db, COL, id), data);
+  const clean = JSON.parse(JSON.stringify(data));
+  await updateDoc(doc(db, COL, id), clean);
   const updated = await getListingById(id);
   if (!updated) throw new Error("Listing not found");
   return updated;
@@ -71,31 +63,17 @@ export async function claimListing(
 }
 
 export async function getListingsByDonor(donorId: string): Promise<FoodListing[]> {
-  try {
-    const snap = await getDocs(
-      query(
-        collection(db, COL),
-        where("donorId", "==", donorId),
-        orderBy("createdAt", "desc")
-      )
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-  } catch {
-    // Fallback without orderBy while index is building
-    const snap = await getDocs(
-      query(collection(db, COL), where("donorId", "==", donorId))
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-  }
+  const snap = await getDocs(
+    query(collection(db, COL), where("donorId", "==", donorId))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
 }
 
 export function subscribeToListings(
   callback: (listings: FoodListing[]) => void
 ): () => void {
-  const q = query(collection(db, COL), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    const listings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-    callback(listings);
+  return onSnapshot(collection(db, COL), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
   });
 }
 
@@ -103,32 +81,8 @@ export function subscribeToListingsByDonor(
   donorId: string,
   callback: (listings: FoodListing[]) => void
 ): () => void {
-  try {
-    // Try with orderBy first (needs index)
-    const q = query(
-      collection(db, COL),
-      where("donorId", "==", donorId),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(q, 
-      (snap) => {
-        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
-      },
-      (error) => {
-        // Index not ready — fallback without orderBy
-        const q2 = query(
-          collection(db, COL),
-          where("donorId", "==", donorId)
-        );
-        onSnapshot(q2, (snap) => {
-          callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
-        });
-      }
-    );
-  } catch {
-    const q = query(collection(db, COL), where("donorId", "==", donorId));
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
-    });
-  }
+  const q = query(collection(db, COL), where("donorId", "==", donorId));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
+  });
 }
