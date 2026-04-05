@@ -85,10 +85,14 @@ export default function CollectorDashboard() {
   // Real-time subscription
   const unsubscribe = subscribeToListings((data) => {
     setListings(data.filter((l) => l.status === "active"));
-    if (u) setClaimedListings(data.filter((l) => l.status === "claimed" && l.claimedBy === u.id));
+    if (u) {
+      setClaimedListings(
+        data.filter((l) => l.claimedBy === u.id)
+      );
+    }
   });
 
-  return () => unsubscribe(); // cleanup on unmount
+  return () => unsubscribe();
 }, []);
   
 const handleClaim = async (id: string) => {
@@ -141,14 +145,19 @@ const handleClaim = async (id: string) => {
     return true;
   });
 
-  const totalKg = listings.reduce((s, l) => s + (l.unit === "kg" ? l.quantity : 0), 0);
+  const totalKgClaimed = claimedListings.reduce(
+  (sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0
+);
+const totalPortionsClaimed = claimedListings.reduce(
+  (sum, l) => sum + (l.unit === "portions" ? l.quantity : 0), 0
+);
 
-  const collectorStats = [
-    { label: "Available Nearby", value: listings.length.toString(), icon: Package },
-    { label: "Claimed by You", value: claimedListings.length.toString(), icon: Search },
-    { label: "Total Available", value: `${totalKg} kg`, icon: Weight },
-    { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
-  ];
+const collectorStats = [
+  { label: "Available Nearby", value: listings.length.toString(), icon: Package },
+  { label: "Total Claimed", value: claimedListings.length.toString(), icon: Search },
+  { label: "kg Collected", value: `${totalKgClaimed} kg`, icon: Weight },
+  { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
+];
 
   return (
     <DashboardLayout role="collector">

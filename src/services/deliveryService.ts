@@ -7,6 +7,7 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/config/firebase";
 import { Delivery } from "@/types";
@@ -60,4 +61,30 @@ export async function updateDeliveryStatus(
   status: Delivery["status"]
 ): Promise<void> {
   await updateDoc(doc(db, COL, id), { status });
+}
+
+export function subscribeToUnassignedDeliveries(
+  callback: (deliveries: Delivery[]) => void
+): () => void {
+  const q = query(
+    collection(db, COL),
+    where("status", "==", "assigned")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Delivery)));
+  });
+}
+
+export function subscribeToDeliveryHistory(
+  volunteerId: string,
+  callback: (deliveries: Delivery[]) => void
+): () => void {
+  const q = query(
+    collection(db, COL),
+    where("volunteerId", "==", volunteerId),
+    where("status", "==", "delivered")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Delivery)));
+  });
 }

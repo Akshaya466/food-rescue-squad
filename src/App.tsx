@@ -20,7 +20,7 @@ const queryClient = new QueryClient();
 
 // Redirects to correct dashboard based on role
 function RoleRedirect() {
-  const stored = localStorage.getItem("foodbridge_user");
+  const stored = localStorage.getItem("Annora_user");
   const user = stored ? JSON.parse(stored) : null;
   if (!user) return <Navigate to="/login" replace />;
   const routes: Record<string, string> = {

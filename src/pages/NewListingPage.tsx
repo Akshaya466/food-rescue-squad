@@ -46,7 +46,7 @@ export default function NewListingPage() {
   };
 
   const handleSubmit = async () => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     const user: User | null = stored ? JSON.parse(stored) : null;
     await createListing({
       donorId: user?.id || "guest_" + Date.now(),

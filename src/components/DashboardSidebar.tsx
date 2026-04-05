@@ -37,7 +37,7 @@ export function DashboardSidebar({ role = "donor" }: { role?: string }) {
           </div>
           <div>
             <p className="text-sm font-semibold capitalize">{role} Panel</p>
-            <p className="text-xs text-muted-foreground">FoodBridge</p>
+            <p className="text-xs text-muted-foreground">Annora</p>
           </div>
         </div>
       </div>

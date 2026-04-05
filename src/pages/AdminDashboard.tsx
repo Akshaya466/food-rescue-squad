@@ -29,7 +29,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     getAllListings().then(setListings);
-    const storedUsers = localStorage.getItem("foodbridge_users");
+    const storedUsers = localStorage.getItem("Annora_users");
     if (storedUsers) setUsers(JSON.parse(storedUsers));
   }, []);
 

@@ -24,10 +24,10 @@ export async function updateUserProfile(
 ): Promise<void> {
   await updateDoc(doc(db, "users", userId), data);
   // Update localStorage too
-  const stored = localStorage.getItem("foodbridge_user");
+  const stored = localStorage.getItem("Annora_user");
   if (stored) {
     const user = JSON.parse(stored);
-    localStorage.setItem("foodbridge_user", JSON.stringify({ ...user, ...data }));
+    localStorage.setItem("Annora_user", JSON.stringify({ ...user, ...data }));
   }
 }
 

@@ -45,7 +45,7 @@ export default function CollectorMapPage() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     const u = stored ? JSON.parse(stored) : null;
     setUser(u);
     getAllListings().then((data) => setListings(data.filter((l) => l.status === "active")));

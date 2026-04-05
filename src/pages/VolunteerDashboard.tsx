@@ -6,7 +6,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Phone, ChevronRight, Flame, Package, Truck, CheckCircle, Navigation, Award } from "lucide-react";
-import { getUnassignedDeliveries, getDeliveryHistory, updateDeliveryStatus } from "@/services/deliveryService";
+import { subscribeToUnassignedDeliveries, subscribeToDeliveryHistory, updateDeliveryStatus } from "@/services/deliveryService";
 import { Delivery, User } from "@/types";
 import { toast } from "sonner";
 
@@ -59,20 +59,30 @@ export default function VolunteerDashboard() {
   const [currentLocation, setCurrentLocation] = useState<[number, number]>([13.0827, 80.2707]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
-    if (stored) {
-      const u = JSON.parse(stored);
-      setUser(u);
-      getUnassignedDeliveries().then(setActive);
-      getDeliveryHistory(u.id).then(setHistory);
-    }
+  const stored = localStorage.getItem("foodbridge_user");
+  if (stored) {
+    const u = JSON.parse(stored);
+    setUser(u);
+
+    // Real-time active deliveries
+    const unsubscribeActive = subscribeToUnassignedDeliveries(setActive);
+
+    // Real-time history
+    const unsubscribeHistory = subscribeToDeliveryHistory(u.id, setHistory);
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
         () => setCurrentLocation([13.0827, 80.2707])
       );
     }
-  }, []);
+
+    return () => {
+      unsubscribeActive();
+      unsubscribeHistory();
+    };
+  }
+}, []);
 
   const advanceStatus = async (delivery: Delivery) => {
     const idx = statusPipeline.indexOf(delivery.status);
@@ -84,12 +94,12 @@ export default function VolunteerDashboard() {
     // Assign volunteer when they start
     if (delivery.volunteerId === "unassigned" && user) {
       const deliveries: Delivery[] = JSON.parse(
-        localStorage.getItem("foodbridge_deliveries") || "[]"
+        localStorage.getItem("Annora_deliveries") || "[]"
       );
       const didx = deliveries.findIndex((d) => d.id === delivery.id);
       if (didx !== -1) {
         deliveries[didx].volunteerId = user.id;
-        localStorage.setItem("foodbridge_deliveries", JSON.stringify(deliveries));
+        localStorage.setItem("Annora_deliveries", JSON.stringify(deliveries));
       }
     }
 
@@ -103,12 +113,14 @@ export default function VolunteerDashboard() {
     }
   };
 
-  const todayStats = [
-    { label: "Deliveries", value: history.length.toString(), icon: Truck },
-    { label: "Active", value: active.length.toString(), icon: Package },
-    { label: "Streak", value: "0 days", icon: Flame },
-    { label: "Points", value: (history.length * 50).toString(), icon: Award },
-  ];
+  const totalKgRescued = history.reduce((sum, d) => sum + (d.distanceKm || 0), 0).toFixed(1);
+
+const todayStats = [
+  { label: "Total Delivered", value: history.length.toString(), icon: Truck },
+  { label: "Active Now", value: active.length.toString(), icon: Package },
+  { label: "kg Rescued", value: totalKgRescued, icon: Flame },
+  { label: "Points", value: (history.length * 50).toString(), icon: Award },
+];
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -117,7 +129,7 @@ export default function VolunteerDashboard() {
         <div className="container flex h-14 items-center justify-between">
           <div className="flex items-center gap-2">
             <Truck className="h-5 w-5 text-green-400" />
-            <span className="font-bold">FoodBridge Delivery</span>
+            <span className="font-bold">Annora Delivery</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-400">{user?.name || "Volunteer"}</span>

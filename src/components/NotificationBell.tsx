@@ -10,7 +10,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     const user = stored ? JSON.parse(stored) : null;
     if (!user) return;
 
@@ -21,7 +21,7 @@ export function NotificationBell() {
   const unread = notifications.filter((n) => !n.isRead).length;
 
   const markAllRead = async () => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     const user = stored ? JSON.parse(stored) : null;
     if (!user) return;
     await markAllNotificationsRead(user.id);

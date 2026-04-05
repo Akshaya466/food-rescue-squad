@@ -14,7 +14,7 @@ export default function DonorDashboard() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     if (stored) setUser(JSON.parse(stored));
   }, []);
 

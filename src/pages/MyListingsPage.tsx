@@ -22,7 +22,7 @@ export default function MyListingsPage() {
   const [editForm, setEditForm] = useState<Partial<FoodListing>>({});
 
   useEffect(() => {
-  const stored = localStorage.getItem("foodbridge_user");
+  const stored = localStorage.getItem("Annora_user");
   const user: User | null = stored ? JSON.parse(stored) : null;
   if (user) getListingsByDonor(user.id).then(setListings);
 }, []);

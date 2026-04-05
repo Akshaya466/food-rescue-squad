@@ -1,35 +1,25 @@
-FOODBRIDGE
+# Annora — Surplus Food Redistribution Network
 
-First Hackathon → Full-Stack Web App
+A real-time web platform connecting food donors with NGOs and volunteers to reduce food waste in urban India.
 
-Built during my first hackathon in just 6 hours, this project started as a prototype and later evolved into a fully functional web application with three role-based dashboards and interactive mapping using Leaflet.
+🔗 **Live Demo:** [food-rescue-squad.vercel.app](https://food-rescue-squad.vercel.app)
 
-📌 What It Does
+## Tech Stack
+React · TypeScript · Firebase · Tailwind CSS · Leaflet.js · Vercel
 
-Connects donors, NGOs, and delivery teams to streamline donations, requests, and deliveries.
+## Features
+- Post surplus food listings with pickup window
+- NGOs claim nearby food via live map or card view
+- Instamart-style volunteer delivery dashboard
+- Real-time updates with Firestore
+- Google Sign-in + Email/Password auth
+- Rating system and trust scores
+- Admin analytics dashboard
 
-Donors submit and track donations
-NGOs manage requests and assign deliveries
-Delivery team updates task status
+## Roles
+- **Donor** — Restaurants, canteens, caterers
+- **Collector** — NGOs, community kitchens
+- **Volunteer** — Delivery partners
+## Developer
+**Akshayakumari S** — CSE Student, Velammal College of Engineering and Technology
 
-All dashboards interact in real-time using Firebase.
-
-⚙️ Tech Stack
-Frontend: React + Vite + Tailwind CSS
-Backend: Firebase (Auth + Firestore)
-Maps: Leaflet
-Deployment: Vercel
-✨ Key Highlights
-Role-Based Dashboards
-CRUD Operations & Secure Authentication
-Real-Time Database Updates
-Interactive Map Visualization
-Responsive UI for Desktop & Mobile
-
-💡 What I Learned
-Building under time pressure (hackathon experience)
-Implementing role-based dashboards
-Integrating maps & real-time database updates
-Deployment workflow & environment management
-
-First hackathon, first full-stack deployment — proof that learning continues after the event ends.

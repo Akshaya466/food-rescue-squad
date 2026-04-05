@@ -22,7 +22,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
+    const stored = localStorage.getItem("Annora_user");
     if (stored) {
       const u = JSON.parse(stored);
       setUser(u);

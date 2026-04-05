@@ -14,7 +14,7 @@ interface NavbarProps {
 
 export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const stored = localStorage.getItem("foodbridge_user");
+  const stored = localStorage.getItem("Annora_user");
   const user = stored ? JSON.parse(stored) : null;
   const displayName = userName || user?.name || "User";
   const location = useLocation();
@@ -30,7 +30,7 @@ export function Navbar({ userName, userRole, onLogout }: NavbarProps) {
           <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
             <Leaf className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold tracking-tight">FoodBridge</span>
+          <span className="text-xl font-bold tracking-tight">Annora</span>
         </Link>
 
         {isLanding ? (

@@ -42,7 +42,7 @@ const roles = [
 ];
 
 const testimonials = [
-  { name: "Rajesh Kumar", role: "Restaurant Owner, Chennai", text: "FoodBridge transformed how we handle surplus. We used to throw away 20kg of biryani daily — now it feeds families in Dharavi.", stars: 5 },
+  { name: "Rajesh Kumar", role: "Restaurant Owner, Chennai", text: "Annora transformed how we handle surplus. We used to throw away 20kg of biryani daily — now it feeds families in Dharavi.", stars: 5 },
   { name: "Meera Iyer", role: "NGO Coordinator, Mumbai", text: "The real-time listings are a game-changer. We can now plan our food drives around available surplus — zero wastage, maximum impact.", stars: 5 },
   { name: "Arjun Nair", role: "Volunteer, Bangalore", text: "Delivering food feels rewarding. The app makes it seamless — I just pick up and drop off. Already rescued 500kg this month!", stars: 5 },
 ];
@@ -103,7 +103,7 @@ export default function LandingPage() {
       <section className="py-20" id="how-it-works">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold">How FoodBridge Works</h2>
+            <h2 className="text-3xl md:text-4xl font-bold">How Annora Works</h2>
             <p className="text-muted-foreground mt-3 max-w-xl mx-auto">Three simple steps to rescue surplus food and feed communities.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
@@ -262,7 +262,7 @@ export default function LandingPage() {
                 <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
                   <Leaf className="h-4 w-4 text-primary-foreground" />
                 </div>
-                <span className="font-bold text-lg">FoodBridge</span>
+                <span className="font-bold text-lg">Annora</span>
               </div>
               <p className="text-sm text-muted-foreground">From Surplus to Smiles — connecting communities to reduce food waste across India.</p>
             </div>
@@ -292,7 +292,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            © 2025 FoodBridge. Built with ❤️ for a hunger-free India.
+            ©Annora. Built with ❤️ for a hunger-free India.
           </div>
         </div>
       </footer>

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { registerUser } from "@/services/authService";
+import { signInWithGoogle } from "@/services/authService";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required").max(100),
@@ -76,7 +77,7 @@ export default function RegisterPage() {
             </div>
           </Link>
           <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>Join FoodBridge and start making an impact</CardDescription>
+          <CardDescription>Join Annora and start making an impact</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <Tabs value={role} onValueChange={setRole}>
@@ -152,7 +153,24 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <Button variant="outline" className="w-full" disabled>
+          <Button
+  variant="outline"
+  className="w-full"
+  onClick={async () => {
+    try {
+      const user = await signInWithGoogle();
+      toast.success(`Welcome, ${user.name}!`);
+      const routes: Record<string, string> = {
+        donor: "/donor/dashboard",
+        collector: "/collector/dashboard",
+        volunteer: "/volunteer/dashboard",
+      };
+      navigate(routes[user.role] || "/donor/dashboard");
+    } catch (error: any) {
+      toast.error("Google sign-in failed. Please try again.");
+    }
+  }}
+>
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.77c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>

@@ -12,11 +12,11 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, role = "donor" }: DashboardLayoutProps) {
   const navigate = useNavigate();
 
-  const stored = localStorage.getItem("foodbridge_user");
+  const stored = localStorage.getItem("Annora_user");
   const user = stored ? JSON.parse(stored) : null;
 
   const handleLogout = () => {
-    localStorage.removeItem("foodbridge_user");
+    localStorage.removeItem("Annora_user");
     navigate("/login");
   };
 

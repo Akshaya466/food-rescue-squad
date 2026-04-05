@@ -6,12 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Leaf } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { loginUser } from "@/services/authService";
+import { loginUser, signInWithGoogle } from "@/services/authService";
+import { updateUserProfile } from "@/services/userService";
+import { User } from "@/types";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -22,28 +25,30 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const [role, setRole] = useState<string>("donor");
+  const [roleModal, setRoleModal] = useState(false);
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string>("donor");
   const navigate = useNavigate();
+
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
 
+  const routes: Record<string, string> = {
+    donor: "/donor/dashboard",
+    collector: "/collector/dashboard",
+    volunteer: "/volunteer/dashboard",
+    admin: "/admin/dashboard",
+  };
+
   const onSubmit = async (data: LoginForm) => {
     try {
       const user = await loginUser(data.email, data.password);
-
       if (user.role !== role) {
         toast.error(`This account is registered as a ${user.role}, not a ${role}.`);
         return;
       }
-
       toast.success(`Welcome back, ${user.name}!`);
-
-      const routes: Record<string, string> = {
-        donor: "/donor/dashboard",
-        collector: "/collector/dashboard",
-        volunteer: "/volunteer/dashboard",
-        admin: "/admin/dashboard",
-      };
       navigate(routes[user.role] || "/donor/dashboard");
     } catch (error: any) {
       if (
@@ -56,6 +61,31 @@ export default function LoginPage() {
         toast.error(error.message || "Login failed. Please try again.");
       }
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const user = await signInWithGoogle();
+      if (!user.role || user.role === "donor") {
+        setGoogleUser(user);
+        setRoleModal(true);
+      } else {
+        toast.success(`Welcome, ${user.name}!`);
+        navigate(routes[user.role] || "/donor/dashboard");
+      }
+    } catch (error: any) {
+      toast.error("Google sign-in failed. Please try again.");
+    }
+  };
+
+  const handleRoleConfirm = async () => {
+    if (!googleUser) return;
+    await updateUserProfile(googleUser.id, { role: selectedRole as any });
+    const updated = { ...googleUser, role: selectedRole as any };
+    localStorage.setItem("foodbridge_user", JSON.stringify(updated));
+    setRoleModal(false);
+    toast.success(`Welcome, ${googleUser.name}!`);
+    navigate(routes[selectedRole] || "/donor/dashboard");
   };
 
   return (
@@ -109,7 +139,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Button variant="outline" className="w-full" disabled>
+          <Button variant="outline" className="w-full" onClick={handleGoogleSignIn}>
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -125,6 +155,36 @@ export default function LoginPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Role Selection Modal for Google Users */}
+      <Dialog open={roleModal} onOpenChange={setRoleModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select your role</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">How will you use FoodBridge?</p>
+          <div className="space-y-2">
+            {["donor", "collector", "volunteer"].map((r) => (
+              <button
+                key={r}
+                className={`w-full p-3 rounded-lg border text-left capitalize font-medium transition-colors ${
+                  selectedRole === r
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted hover:bg-muted"
+                }`}
+                onClick={() => setSelectedRole(r)}
+              >
+                {r === "donor" ? "🍱 Donor — Restaurant / Canteen" :
+                 r === "collector" ? "🏢 Collector — NGO / Community Kitchen" :
+                 "🛵 Volunteer — Delivery Partner"}
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={handleRoleConfirm}>Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
