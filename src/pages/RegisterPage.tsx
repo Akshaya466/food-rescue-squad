@@ -119,7 +119,7 @@ export default function RegisterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input placeholder="+91 98765 43210" {...register("phone")} />
+                <Input placeholder="your phone number" {...register("phone")} />
                 {errors.phone && <p className="text-xs text-destructive">{errors.phone.message}</p>}
               </div>
               <div className="space-y-2">
