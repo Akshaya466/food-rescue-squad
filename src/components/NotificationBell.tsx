@@ -4,17 +4,7 @@ import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-const STORAGE_KEY = "foodbridge_notifications";
-
-function loadNotifications(userId: string): Notification[] {
-  try {
-    const all: Notification[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return all.filter((n) => n.userId === userId);
-  } catch {
-    return [];
-  }
-}
+import { subscribeToNotifications, markAllNotificationsRead } from "@/services/notificationService";
 
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -22,22 +12,19 @@ export function NotificationBell() {
   useEffect(() => {
     const stored = localStorage.getItem("foodbridge_user");
     const user = stored ? JSON.parse(stored) : null;
-    if (user) setNotifications(loadNotifications(user.id));
+    if (!user) return;
+
+    const unsubscribe = subscribeToNotifications(user.id, setNotifications);
+    return () => unsubscribe();
   }, []);
 
   const unread = notifications.filter((n) => !n.isRead).length;
 
-  const markAllRead = () => {
-    const updated = notifications.map((n) => ({ ...n, isRead: true }));
-    setNotifications(updated);
-
-    // Save back to localStorage
-    const all: Notification[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  const markAllRead = async () => {
     const stored = localStorage.getItem("foodbridge_user");
     const user = stored ? JSON.parse(stored) : null;
     if (!user) return;
-    const others = all.filter((n) => n.userId !== user.id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...others, ...updated]));
+    await markAllNotificationsRead(user.id);
   };
 
   const timeAgo = (date: string) => {
@@ -80,9 +67,7 @@ export function NotificationBell() {
             notifications.map((n) => (
               <div key={n.id} className={`p-4 border-b last:border-0 ${!n.isRead ? "bg-accent/50" : ""}`}>
                 <div className="flex items-start gap-2">
-                  {!n.isRead && (
-                    <span className="mt-1.5 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
-                  )}
+                  {!n.isRead && <span className="mt-1.5 h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{n.title}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>

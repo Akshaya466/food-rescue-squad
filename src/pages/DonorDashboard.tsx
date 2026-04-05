@@ -1,3 +1,4 @@
+import { subscribeToListingsByDonor } from "@/services/foodService";
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,9 +19,9 @@ export default function DonorDashboard() {
   }, []);
 
   useEffect(() => {
-  if (user) {
-    getListingsByDonor(user.id).then(setListings);
-  }
+  if (!user) return;
+  const unsubscribe = subscribeToListingsByDonor(user.id, setListings);
+  return () => unsubscribe();
 }, [user]);
   const activeCount = listings.filter((l) => l.status === "active").length;
   const totalKg = listings.reduce((sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0);

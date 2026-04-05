@@ -9,7 +9,7 @@ import {
   query,
   where,
   orderBy,
-  serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/config/firebase";
 import { FoodListing } from "@/types";
@@ -87,4 +87,29 @@ export async function getListingsByDonor(donorId: string): Promise<FoodListing[]
     );
     return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
   }
+}
+
+export function subscribeToListings(
+  callback: (listings: FoodListing[]) => void
+): () => void {
+  const q = query(collection(db, COL), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    const listings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+    callback(listings);
+  });
+}
+
+export function subscribeToListingsByDonor(
+  donorId: string,
+  callback: (listings: FoodListing[]) => void
+): () => void {
+  const q = query(
+    collection(db, COL),
+    where("donorId", "==", donorId),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snap) => {
+    const listings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+    callback(listings);
+  });
 }

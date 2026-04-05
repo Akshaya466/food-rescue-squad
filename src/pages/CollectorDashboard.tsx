@@ -1,3 +1,5 @@
+import { createNotification } from "@/services/notificationService";
+import { subscribeToListings, claimListing, updateListing } from "@/services/foodService";
 import { createDelivery } from "@/services/deliveryService";
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -10,7 +12,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from "lucide-react";
-import { getAllListings, claimListing, updateListing } from "@/services/foodService";
+import { getAllListings } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
 
@@ -76,16 +78,20 @@ export default function CollectorDashboard() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("foodbridge_user");
-    const u = stored ? JSON.parse(stored) : null;
-    setUser(u);
-    getAllListings().then((data) => {
-      setListings(data.filter((l) => l.status === "active"));
-      if (u) setClaimedListings(data.filter((l) => l.status === "claimed" && l.claimedBy === u.id));
-    });
-  }, []);
+  const stored = localStorage.getItem("foodbridge_user");
+  const u = stored ? JSON.parse(stored) : null;
+  setUser(u);
 
-  const handleClaim = async (id: string) => {
+  // Real-time subscription
+  const unsubscribe = subscribeToListings((data) => {
+    setListings(data.filter((l) => l.status === "active"));
+    if (u) setClaimedListings(data.filter((l) => l.status === "claimed" && l.claimedBy === u.id));
+  });
+
+  return () => unsubscribe(); // cleanup on unmount
+}, []);
+  
+const handleClaim = async (id: string) => {
   if (!user) return;
   await claimListing(id, user.id);
   const claimed = listings.find(l => l.id === id);
@@ -93,7 +99,7 @@ export default function CollectorDashboard() {
     setListings((p) => p.filter((l) => l.id !== id));
     setClaimedListings((p) => [...p, { ...claimed, status: "claimed", claimedBy: user.id }]);
 
-    // Auto-create delivery for volunteers to see
+    // Create delivery for volunteers
     await createDelivery({
       listingId: claimed.id,
       volunteerId: "unassigned",
@@ -105,8 +111,18 @@ export default function CollectorDashboard() {
       distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
       foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
     });
+
+    // Notify donor
+    await createNotification({
+      userId: claimed.donorId,
+      type: "claim",
+      title: "Food Claimed! 🎉",
+      message: `${user.name} claimed your ${claimed.foodType} listing.`,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    });
   }
-  toast.success("Food claimed! A delivery has been created for volunteers.");
+  toast.success("Food claimed! The donor will be notified.");
 };
 
   const handleUnclaim = async (id: string) => {

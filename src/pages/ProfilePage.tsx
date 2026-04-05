@@ -1,37 +1,105 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Star, CheckCircle, Award, Package, Heart, Shield } from "lucide-react";
-import { getUserRatings } from "@/services/userService";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Star, CheckCircle, Award, Package, Heart, Shield, Pencil } from "lucide-react";
+import { getUserRatings, updateUserProfile, submitRating } from "@/services/userService";
 import { useState, useEffect } from "react";
 import { Rating, User } from "@/types";
-
-const badges = [
-  { label: "Top Donor", icon: Award, color: "bg-warning/15 text-warning" },
-  { label: "Verified", icon: Shield, color: "bg-success/15 text-success" },
-  { label: "100+ Rescues", icon: Heart, color: "bg-secondary/15 text-secondary" },
-];
+import { toast } from "sonner";
 
 export default function ProfilePage() {
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", orgName: "", address: "" });
+  const [ratingForm, setRatingForm] = useState({ score: 5, review: "" });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("foodbridge_user");
     if (stored) {
       const u = JSON.parse(stored);
       setUser(u);
-      getUserRatings(u.id).then(setRatings);
+      setEditForm({
+        name: u.name || "",
+        phone: u.phone || "",
+        orgName: u.orgName || "",
+        address: u.location?.address || "",
+      });
+      getUserRatings(u.id).then(setRatings).catch(() => setRatings([]));
     }
   }, []);
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      await updateUserProfile(user.id, {
+        name: editForm.name,
+        phone: editForm.phone,
+        orgName: editForm.orgName,
+        location: { ...user.location, address: editForm.address },
+      });
+      setUser((p) => p ? {
+        ...p,
+        name: editForm.name,
+        phone: editForm.phone,
+        orgName: editForm.orgName,
+        location: { ...p.location, address: editForm.address },
+      } : p);
+      setEditOpen(false);
+      toast.success("Profile updated successfully!");
+    } catch (e) {
+      toast.error("Failed to update profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmitRating = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      const newRating = await submitRating({
+        fromUserId: user.id,
+        toUserId: user.id,
+        listingId: "self",
+        score: ratingForm.score,
+        review: ratingForm.review,
+        createdAt: new Date().toISOString(),
+      });
+      setRatings((p) => [newRating, ...p]);
+      setRatingOpen(false);
+      toast.success("Rating submitted!");
+    } catch (e) {
+      toast.error("Failed to submit rating.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase()
     : "U";
 
+  const badges = [
+    { label: "Top Donor", icon: Award, color: "bg-warning/15 text-warning", show: (user?.totalRescues ?? 0) >= 10 },
+    { label: "Verified", icon: Shield, color: "bg-success/15 text-success", show: user?.isVerified },
+    { label: "100+ Rescues", icon: Heart, color: "bg-secondary/15 text-secondary", show: (user?.totalRescues ?? 0) >= 100 },
+    { label: "Active Member", icon: Package, color: "bg-primary/15 text-primary", show: true },
+  ];
+
   return (
     <DashboardLayout role={user?.role || "donor"}>
       <div className="max-w-3xl mx-auto space-y-6">
+
+        {/* Profile Card */}
         <Card>
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
@@ -52,9 +120,7 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-warning text-warning" />
                     <span className="font-semibold">{user?.trustScore ?? "—"}</span>
-                    <span className="text-muted-foreground text-sm">
-                      ({ratings.length} ratings)
-                    </span>
+                    <span className="text-muted-foreground text-sm">({ratings.length} ratings)</span>
                   </div>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Package className="h-4 w-4" /> {user?.totalRescues ?? 0} rescues
@@ -63,14 +129,18 @@ export default function ProfilePage() {
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
                 <p className="text-sm text-muted-foreground">{user?.phone}</p>
               </div>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" /> Edit Profile
+              </Button>
             </div>
           </CardContent>
         </Card>
 
+        {/* Badges */}
         <Card>
           <CardHeader><CardTitle className="text-lg">Badges & Achievements</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            {badges.map((b) => (
+            {badges.filter(b => b.show).map((b) => (
               <div key={b.label} className={`flex items-center gap-2 px-4 py-2 rounded-lg ${b.color}`}>
                 <b.icon className="h-4 w-4" />
                 <span className="text-sm font-medium">{b.label}</span>
@@ -79,8 +149,14 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* Reviews */}
         <Card>
-          <CardHeader><CardTitle className="text-lg">Reviews</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Reviews ({ratings.length})</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setRatingOpen(true)}>
+              + Add Review
+            </Button>
+          </CardHeader>
           <CardContent className="space-y-4">
             {ratings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No reviews yet.</p>
@@ -97,12 +173,81 @@ export default function ProfilePage() {
                       {new Date(r.createdAt).toLocaleDateString("en-IN")}
                     </span>
                   </div>
-                  <p className="text-sm mt-1">{r.review}</p>
+                  {r.review && <p className="text-sm mt-1">{r.review}</p>}
                 </div>
               ))
             )}
           </CardContent>
         </Card>
+
+        {/* Edit Profile Modal */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Profile</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input value={editForm.name} onChange={(e) => setEditForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input value={editForm.phone} onChange={(e) => setEditForm(p => ({ ...p, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Organization / NGO Name</Label>
+                <Input value={editForm.orgName} onChange={(e) => setEditForm(p => ({ ...p, orgName: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>City / Address</Label>
+                <Input value={editForm.address} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveProfile} disabled={saving}>
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Rating Modal */}
+        <Dialog open={ratingOpen} onOpenChange={setRatingOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Submit a Rating</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Rating</Label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} onClick={() => setRatingForm(p => ({ ...p, score: s }))}>
+                      <Star className={`h-8 w-8 transition-colors ${s <= ratingForm.score ? "fill-warning text-warning" : "text-muted-foreground"}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Review (optional)</Label>
+                <Textarea
+                  placeholder="Write your review..."
+                  value={ratingForm.review}
+                  onChange={(e) => setRatingForm(p => ({ ...p, review: e.target.value }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRatingOpen(false)}>Cancel</Button>
+              <Button onClick={handleSubmitRating} disabled={saving}>
+                {saving ? "Submitting..." : "Submit Rating"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </DashboardLayout>
   );
