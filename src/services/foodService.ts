@@ -19,14 +19,15 @@ const COL = "listings";
 export async function createListing(
   data: Omit<FoodListing, "id" | "createdAt" | "status">
 ): Promise<FoodListing> {
-  const listing = {
+  // Remove all undefined values — Firestore rejects them
+  const clean = JSON.parse(JSON.stringify({
     ...data,
     status: "active",
-    claimedBy: data.claimedBy ?? null, // ← undefined → null
+    claimedBy: data.claimedBy ?? null,
     createdAt: new Date().toISOString(),
-  };
-  const docRef = await addDoc(collection(db, COL), listing);
-  return { ...listing, id: docRef.id } as FoodListing;
+  }));
+  const docRef = await addDoc(collection(db, COL), clean);
+  return { ...clean, id: docRef.id } as FoodListing;
 }
 
 export async function getAllListings(): Promise<FoodListing[]> {
