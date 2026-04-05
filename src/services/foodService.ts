@@ -103,13 +103,32 @@ export function subscribeToListingsByDonor(
   donorId: string,
   callback: (listings: FoodListing[]) => void
 ): () => void {
-  const q = query(
-    collection(db, COL),
-    where("donorId", "==", donorId),
-    orderBy("createdAt", "desc")
-  );
-  return onSnapshot(q, (snap) => {
-    const listings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
-    callback(listings);
-  });
+  try {
+    // Try with orderBy first (needs index)
+    const q = query(
+      collection(db, COL),
+      where("donorId", "==", donorId),
+      orderBy("createdAt", "desc")
+    );
+    return onSnapshot(q, 
+      (snap) => {
+        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
+      },
+      (error) => {
+        // Index not ready — fallback without orderBy
+        const q2 = query(
+          collection(db, COL),
+          where("donorId", "==", donorId)
+        );
+        onSnapshot(q2, (snap) => {
+          callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
+        });
+      }
+    );
+  } catch {
+    const q = query(collection(db, COL), where("donorId", "==", donorId));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
+    });
+  }
 }
