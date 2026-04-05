@@ -63,7 +63,7 @@ export default function NewListingPage() {
       photos: [],
       dietaryTags: form.dietaryTags,
       urgencyLevel: form.urgencyLevel,
-      claimedBy: undefined,
+      claimedBy: null,
     });
     toast.success("Listing posted successfully!");
     navigate("/donor/listings");

@@ -19,19 +19,27 @@ const COL = "listings";
 export async function createListing(
   data: Omit<FoodListing, "id" | "createdAt" | "status">
 ): Promise<FoodListing> {
-  const docRef = await addDoc(collection(db, COL), {
+  const listing = {
     ...data,
     status: "active",
+    claimedBy: data.claimedBy ?? null, // ← undefined → null
     createdAt: new Date().toISOString(),
-  });
-  return { ...data, id: docRef.id, status: "active", createdAt: new Date().toISOString() };
+  };
+  const docRef = await addDoc(collection(db, COL), listing);
+  return { ...listing, id: docRef.id } as FoodListing;
 }
 
 export async function getAllListings(): Promise<FoodListing[]> {
-  const snap = await getDocs(
-    query(collection(db, COL), orderBy("createdAt", "desc"))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  try {
+    const snap = await getDocs(
+      query(collection(db, COL), orderBy("createdAt", "desc"))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  } catch {
+    // Fallback without orderBy while index is building
+    const snap = await getDocs(collection(db, COL));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  }
 }
 
 export async function getListingById(id: string): Promise<FoodListing | undefined> {
@@ -62,12 +70,20 @@ export async function claimListing(
 }
 
 export async function getListingsByDonor(donorId: string): Promise<FoodListing[]> {
-  const snap = await getDocs(
-    query(
-      collection(db, COL),
-      where("donorId", "==", donorId),
-      orderBy("createdAt", "desc")
-    )
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, COL),
+        where("donorId", "==", donorId),
+        orderBy("createdAt", "desc")
+      )
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  } catch {
+    // Fallback without orderBy while index is building
+    const snap = await getDocs(
+      query(collection(db, COL), where("donorId", "==", donorId))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing));
+  }
 }
