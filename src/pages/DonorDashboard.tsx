@@ -1,4 +1,3 @@
-import { subscribeToListingsByDonor } from "@/services/foodService";
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/FoodBadges";
 import { Link } from "react-router-dom";
 import { PlusCircle, Package, Weight, Heart, Star, CheckCircle, Clock, Bell } from "lucide-react";
-import { getListingsByDonor } from "@/services/foodService";
+import { subscribeToListingsByDonor } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 
 export default function DonorDashboard() {
@@ -14,23 +13,28 @@ export default function DonorDashboard() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("Annora_user");
-    if (stored) setUser(JSON.parse(stored));
+    const stored = localStorage.getItem("foodbridge_user");
+    if (stored) {
+      const u = JSON.parse(stored);
+      setUser(u);
+
+      // Real-time subscription
+      const unsubscribe = subscribeToListingsByDonor(u.id, setListings);
+      return () => unsubscribe();
+    }
   }, []);
 
-  useEffect(() => {
-  if (!user) return;
-  const unsubscribe = subscribeToListingsByDonor(user.id, setListings);
-  return () => unsubscribe();
-}, [user]);
   const activeCount = listings.filter((l) => l.status === "active").length;
-  const totalKg = listings.reduce((sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0);
+  const claimedCount = listings.filter((l) => l.status === "claimed").length;
   const deliveredCount = listings.filter((l) => l.status === "delivered").length;
+  const totalKg = listings.reduce((sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0);
+  const totalPortions = listings.reduce((sum, l) => sum + (l.unit === "portions" ? l.quantity : 0), 0);
+  const livesImpacted = deliveredCount * 30;
 
   const stats = [
     { label: "Active Listings", value: String(activeCount), icon: Package, color: "text-success" },
     { label: "Total Donated", value: `${totalKg} kg`, icon: Weight, color: "text-primary" },
-    { label: "Delivered", value: String(deliveredCount), icon: Heart, color: "text-secondary" },
+    { label: "Lives Impacted", value: String(livesImpacted), icon: Heart, color: "text-secondary" },
     { label: "Rating", value: user ? `${user.trustScore} ★` : "—", icon: Star, color: "text-warning" },
   ];
 
@@ -75,6 +79,28 @@ export default function DonorDashboard() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Extra Stats Row */}
+        <div className="grid grid-cols-3 gap-4">
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="p-4 text-center">
+              <p className="text-3xl font-bold text-primary">{activeCount}</p>
+              <p className="text-sm text-muted-foreground mt-1">Active Now</p>
+            </CardContent>
+          </Card>
+          <Card className="border-warning/20 bg-warning/5">
+            <CardContent className="p-4 text-center">
+              <p className="text-3xl font-bold text-warning">{claimedCount}</p>
+              <p className="text-sm text-muted-foreground mt-1">Claimed</p>
+            </CardContent>
+          </Card>
+          <Card className="border-success/20 bg-success/5">
+            <CardContent className="p-4 text-center">
+              <p className="text-3xl font-bold text-success">{deliveredCount}</p>
+              <p className="text-sm text-muted-foreground mt-1">Delivered</p>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
@@ -139,15 +165,23 @@ export default function DonorDashboard() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {listings.slice(0, 4).map((l) => (
+                  {listings.slice(0, 5).map((l) => (
                     <div key={l.id} className="flex items-start gap-3">
                       <Clock className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-sm">
-                          {l.status === "claimed" ? `Someone claimed your ${l.foodType}` : `${l.foodType} is ${l.status}`}
+                          {l.status === "claimed"
+                            ? `✅ ${l.foodType} was claimed`
+                            : l.status === "delivered"
+                            ? `🎉 ${l.foodType} was delivered`
+                            : l.status === "active"
+                            ? `📢 ${l.foodType} is active`
+                            : `${l.foodType} is ${l.status}`}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(l.createdAt).toLocaleDateString("en-IN")}
+                          {new Date(l.createdAt).toLocaleDateString("en-IN", {
+                            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
+                          })}
                         </p>
                       </div>
                     </div>
