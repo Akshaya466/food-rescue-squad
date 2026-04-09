@@ -80,18 +80,32 @@ export default function CollectorDashboard() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
+  let unsubscribeListings: (() => void) | null = null;
+
   const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    // Clean up previous listing subscription before creating new one
+    if (unsubscribeListings) {
+      unsubscribeListings();
+      unsubscribeListings = null;
+    }
+
     if (firebaseUser) {
       const profile = await getUserProfile(firebaseUser.uid);
       setUser(profile);
-      const unsubscribe = subscribeToListings((data) => {
+
+      unsubscribeListings = subscribeToListings((data) => {
         setListings(data.filter((l) => l.status === "active"));
-        setClaimedListings(data.filter((l) => l.claimedBy === firebaseUser.uid));
+        setClaimedListings(
+          data.filter((l) => l.claimedBy === firebaseUser.uid)
+        );
       });
-      return () => unsubscribe();
     }
   });
-  return () => unsubscribeAuth();
+
+  return () => {
+    unsubscribeAuth();
+    if (unsubscribeListings) unsubscribeListings();
+  };
 }, []);
 const handleClaim = async (id: string) => {
   if (!user || !auth.currentUser) return;
