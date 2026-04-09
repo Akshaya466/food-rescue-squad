@@ -12,7 +12,6 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from "lucide-react";
-import { getAllListings } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
 import { auth } from "@/config/firebase";
