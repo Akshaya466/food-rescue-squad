@@ -47,33 +47,42 @@ export default function NewListingPage() {
     }));
   };
 
-  const handleSubmit = async () => {
-  const firebaseUser = auth.currentUser;
-  if (!firebaseUser) {
-    toast.error("You must be logged in to post a listing.");
-    return;
-  }
-  const profile = await getUserProfile(firebaseUser.uid);
+  const [posting, setPosting] = useState(false);
 
-  await createListing({
-    donorId: firebaseUser.uid,
-    donorName: profile?.orgName || profile?.name || "Anonymous Donor",
-    foodType: form.foodType,
-    description: form.description,
-    quantity: Number(form.quantity),
-    unit: form.unit,
-    category: form.category,
-    pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
-    pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
-    address: form.address,
-    location: { lat: 13.0827, lng: 80.2707, address: form.address },
-    photos: [],
-    dietaryTags: form.dietaryTags,
-    urgencyLevel: form.urgencyLevel,
-    claimedBy: null,
-  });
-  toast.success("Listing posted successfully!");
-  navigate("/donor/listings");
+const handleSubmit = async () => {
+  if (posting) return;
+  setPosting(true);
+  try {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      toast.error("You must be logged in.");
+      return;
+    }
+    const profile = await getUserProfile(firebaseUser.uid);
+    await createListing({
+      donorId: firebaseUser.uid,
+      donorName: profile?.orgName || profile?.name || "Anonymous Donor",
+      foodType: form.foodType,
+      description: form.description,
+      quantity: Number(form.quantity),
+      unit: form.unit,
+      category: form.category,
+      pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
+      pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
+      address: form.address,
+      location: { lat: 13.0827, lng: 80.2707, address: form.address },
+      photos: [],
+      dietaryTags: form.dietaryTags,
+      urgencyLevel: form.urgencyLevel,
+      claimedBy: null,
+    });
+    toast.success("Listing posted successfully!");
+    navigate("/donor/listings");
+  } catch (e) {
+    toast.error("Failed to post listing.");
+  } finally {
+    setPosting(false);
+  }
 };
 
   const urgencyColors: Record<string, string> = {
@@ -251,7 +260,9 @@ export default function NewListingPage() {
                   Next <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               ) : (
-                <Button onClick={handleSubmit}>Post Listing</Button>
+                <Button onClick={handleSubmit} disabled={posting}>
+  {posting ? "Posting..." : "Post Listing"}
+</Button>
               )}
             </div>
           </CardContent>
