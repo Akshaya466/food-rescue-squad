@@ -72,80 +72,46 @@ function CountdownTimer({ end }: { end: string }) {
 }
 
 export default function CollectorDashboard() {
-  const [listings, setListings] = useState<FoodListing[]>([]);
-  const [claimedListings, setClaimedListings] = useState<FoodListing[]>([]);
+  const [allData, setAllData] = useState<FoodListing[]>([]);
   const [view, setView] = useState<"card" | "map">("card");
   const [filters, setFilters] = useState({ category: "all", distance: "5", urgency: "all" });
   const [viewTarget, setViewTarget] = useState<FoodListing | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [currentUid, setCurrentUid] = useState<string | null>(null);
 
   useEffect(() => {
-  let unsubscribeListings: (() => void) | null = null;
+    let unsubscribeListings: (() => void) | null = null;
 
-  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-    // Clean up previous listing subscription before creating new one
-    if (unsubscribeListings) {
-      unsubscribeListings();
-      unsubscribeListings = null;
-    }
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubscribeListings) {
+        unsubscribeListings();
+        unsubscribeListings = null;
+      }
 
-    if (firebaseUser) {
-      const profile = await getUserProfile(firebaseUser.uid);
-      setUser(profile);
+      if (firebaseUser) {
+        setCurrentUid(firebaseUser.uid);
+        const profile = await getUserProfile(firebaseUser.uid);
+        setUser(profile);
 
-      unsubscribeListings = subscribeToListings((data) => {
-        setListings(data.filter((l) => l.status === "active"));
-        setClaimedListings(
-          data.filter((l) => l.claimedBy === firebaseUser.uid)
-        );
-      });
-    }
-  });
-
-  return () => {
-    unsubscribeAuth();
-    if (unsubscribeListings) unsubscribeListings();
-  };
-}, []);
-const handleClaim = async (id: string) => {
-  if (!user || !auth.currentUser) return;
-  await claimListing(id, auth.currentUser.uid);
-  const claimed = listings.find(l => l.id === id);
-  if (claimed) {
-    setListings((p) => p.filter((l) => l.id !== id));
-    setClaimedListings((p) => [...p, { ...claimed, status: "claimed", claimedBy: auth.currentUser!.uid }]);
-    await createDelivery({
-      listingId: claimed.id,
-      volunteerId: "unassigned",
-      donorId: claimed.donorId,
-      status: "assigned",
-      pickupAddress: claimed.address,
-      dropAddress: user.location?.address || "NGO Location",
-      estimatedTime: "30 mins",
-      distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
-      foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
+        unsubscribeListings = subscribeToListings((data) => {
+          // Deduplicate by id
+          const unique = data.filter(
+  (l, index, self) => index === self.findIndex((t) => t.id === l.id)
+);
+setAllData(unique);
+        });
+      }
     });
-    await createNotification({
-      userId: claimed.donorId,
-      type: "claim",
-      title: "Food Claimed! 🎉",
-      message: `${user.name} claimed your ${claimed.foodType} listing.`,
-      isRead: false,
-      createdAt: new Date().toISOString(),
-    });
-  }
-  toast.success("Food claimed! The donor will be notified.");
-};
 
-  const handleUnclaim = async (id: string) => {
-    await updateListing(id, { status: "active", claimedBy: undefined });
-    const unclaimed = claimedListings.find(l => l.id === id);
-    if (unclaimed) {
-      setClaimedListings((p) => p.filter((l) => l.id !== id));
-      setListings((p) => [...p, { ...unclaimed, status: "active", claimedBy: undefined }]);
-    }
-    toast.success("Listing unclaimed.");
-  };
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeListings) unsubscribeListings();
+    };
+  }, []);
+
+  // Derive active and claimed from single source of truth
+  const listings = allData.filter((l) => l.status === "active");
+  const claimedListings = allData.filter((l) => l.claimedBy === currentUid);
 
   const filteredListings = listings.filter(l => {
     if (filters.category !== "all" && l.category !== filters.category) return false;
@@ -154,18 +120,48 @@ const handleClaim = async (id: string) => {
   });
 
   const totalKgClaimed = claimedListings.reduce(
-  (sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0
-);
-const totalPortionsClaimed = claimedListings.reduce(
-  (sum, l) => sum + (l.unit === "portions" ? l.quantity : 0), 0
-);
+    (sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0
+  );
 
-const collectorStats = [
-  { label: "Available Nearby", value: listings.length.toString(), icon: Package },
-  { label: "Total Claimed", value: claimedListings.length.toString(), icon: Search },
-  { label: "kg Collected", value: `${totalKgClaimed} kg`, icon: Weight },
-  { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
-];
+  const collectorStats = [
+    { label: "Available Nearby", value: listings.length.toString(), icon: Package },
+    { label: "Total Claimed", value: claimedListings.length.toString(), icon: Search },
+    { label: "kg Collected", value: `${totalKgClaimed} kg`, icon: Weight },
+    { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
+  ];
+
+  const handleClaim = async (id: string) => {
+    if (!user || !currentUid) return;
+    await claimListing(id, currentUid);
+    const claimed = allData.find(l => l.id === id);
+    if (claimed) {
+      await createDelivery({
+        listingId: claimed.id,
+        volunteerId: "unassigned",
+        donorId: claimed.donorId,
+        status: "assigned",
+        pickupAddress: claimed.address,
+        dropAddress: user.location?.address || "NGO Location",
+        estimatedTime: "30 mins",
+        distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
+        foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
+      });
+      await createNotification({
+        userId: claimed.donorId,
+        type: "claim",
+        title: "Food Claimed! 🎉",
+        message: `${user.name} claimed your ${claimed.foodType} listing.`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    toast.success("Food claimed! The donor will be notified.");
+  };
+
+  const handleUnclaim = async (id: string) => {
+    await updateListing(id, { status: "active", claimedBy: null });
+    toast.success("Listing unclaimed.");
+  };
 
   return (
     <DashboardLayout role="collector">
@@ -280,7 +276,7 @@ const collectorStats = [
               </div>
             )}
 
-            {/* Claimed by you section */}
+            {/* Claimed by You */}
             {claimedListings.length > 0 && (
               <div className="space-y-3">
                 <h2 className="text-lg font-semibold">Claimed by You</h2>
@@ -289,10 +285,17 @@ const collectorStats = [
                     <CardContent className="p-4 flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <p className="font-semibold">{l.foodType}</p>
-                        <p className="text-xs text-muted-foreground">{l.quantity} {l.unit} · {l.address}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {l.quantity} {l.unit} · {l.address}
+                        </p>
                       </div>
                       <StatusBadge status={l.status} />
-                      <Button variant="outline" size="sm" className="text-destructive border-destructive/30" onClick={() => handleUnclaim(l.id)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive border-destructive/30"
+                        onClick={() => handleUnclaim(l.id)}
+                      >
                         <X className="h-3 w-3 mr-1" /> Unclaim
                       </Button>
                     </CardContent>
@@ -303,7 +306,7 @@ const collectorStats = [
           </>
         )}
 
-        {/* Map View with Leaflet */}
+        {/* Map View */}
         {view === "map" && (
           <div className="rounded-xl overflow-hidden border" style={{ height: "500px" }}>
             <MapContainer center={[13.0827, 80.2707]} zoom={13} style={{ height: "100%", width: "100%" }}>
@@ -340,7 +343,7 @@ const collectorStats = [
           </div>
         )}
 
-        {/* View Details Modal */}
+        {/* Details Modal */}
         <Dialog open={!!viewTarget} onOpenChange={() => setViewTarget(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -357,7 +360,8 @@ const collectorStats = [
                 <div><p className="text-muted-foreground">Address</p><p className="font-medium">{viewTarget.address}</p></div>
                 <div><p className="text-muted-foreground">Description</p><p>{viewTarget.description || "—"}</p></div>
                 <div><p className="text-muted-foreground">Dietary Tags</p><p className="font-medium">{viewTarget.dietaryTags.join(", ") || "None"}</p></div>
-                <div><p className="text-muted-foreground">Pickup Window</p>
+                <div>
+                  <p className="text-muted-foreground">Pickup Window</p>
                   <p className="font-medium">
                     {new Date(viewTarget.pickupWindowStart).toLocaleString("en-IN")} — {new Date(viewTarget.pickupWindowEnd).toLocaleString("en-IN")}
                   </p>
@@ -366,7 +370,9 @@ const collectorStats = [
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
-              <Button onClick={() => { handleClaim(viewTarget!.id); setViewTarget(null); }}>Claim Food</Button>
+              <Button onClick={() => { handleClaim(viewTarget!.id); setViewTarget(null); }}>
+                Claim Food
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

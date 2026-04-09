@@ -63,47 +63,59 @@ export default function VolunteerDashboard() {
   const [currentLocation, setCurrentLocation] = useState<[number, number]>([13.0827, 80.2707]);
 
   useEffect(() => {
-  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+  let unsubActive: (() => void) | null = null;
+  let unsubHistory: (() => void) | null = null;
+
+  const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (unsubActive) { unsubActive(); unsubActive = null; }
+    if (unsubHistory) { unsubHistory(); unsubHistory = null; }
+
     if (firebaseUser) {
       const profile = await getUserProfile(firebaseUser.uid);
       setUser(profile);
-      const unsubscribeActive = subscribeToUnassignedDeliveries(setActive);
-      const unsubscribeHistory = subscribeToDeliveryHistory(firebaseUser.uid, setHistory);
+
+      unsubActive = subscribeToUnassignedDeliveries(setActive);
+      unsubHistory = subscribeToDeliveryHistory(firebaseUser.uid, setHistory);
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
           () => setCurrentLocation([13.0827, 80.2707])
         );
       }
-      return () => {
-        unsubscribeActive();
-        unsubscribeHistory();
-      };
     }
   });
-  return () => unsubscribeAuth();
+
+  return () => {
+    unsubAuth();
+    if (unsubActive) unsubActive();
+    if (unsubHistory) unsubHistory();
+  };
 }, []);
   const advanceStatus = async (delivery: Delivery) => {
   const idx = statusPipeline.indexOf(delivery.status);
   if (idx >= statusPipeline.length - 1) return;
   const next = statusPipeline[idx + 1];
-  const volunteerId = auth.currentUser?.uid || "unassigned";
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return;
 
-  // Always update volunteerId when volunteer takes action
-  await updateDeliveryStatus(delivery.id, next, volunteerId);
+  // Always assign volunteerId and update status together
+  await updateDeliveryStatus(delivery.id, next, currentUid);
 
   if (next === "delivered") {
     setActive((p) => p.filter((d) => d.id !== delivery.id));
-    setHistory((p) => [{ ...delivery, status: next, volunteerId }, ...p]);
+    setHistory((p) => [{
+      ...delivery,
+      status: "delivered",
+      volunteerId: currentUid
+    }, ...p]);
     toast.success("Delivery completed! 🎉");
   } else {
-    setActive((p) =>
-      p.map((d) =>
-        d.id === delivery.id
-          ? { ...d, status: next, volunteerId }
-          : d
-      )
-    );
+    setActive((p) => p.map((d) =>
+      d.id === delivery.id
+        ? { ...d, status: next, volunteerId: currentUid }
+        : d
+    ));
     toast.success(`Status updated to ${statusLabels[next]}`);
   }
 };
