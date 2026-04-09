@@ -84,26 +84,29 @@ export default function VolunteerDashboard() {
   return () => unsubscribeAuth();
 }, []);
   const advanceStatus = async (delivery: Delivery) => {
-    const idx = statusPipeline.indexOf(delivery.status);
-    if (idx >= statusPipeline.length - 1) return;
-    const next = statusPipeline[idx + 1];
+  const idx = statusPipeline.indexOf(delivery.status);
+  if (idx >= statusPipeline.length - 1) return;
+  const next = statusPipeline[idx + 1];
+  const volunteerId = auth.currentUser?.uid || "unassigned";
 
-    await updateDeliveryStatus(delivery.id, next);
+  // Always update volunteerId when volunteer takes action
+  await updateDeliveryStatus(delivery.id, next, volunteerId);
 
-    // Assign volunteer when they start
-    if (delivery.volunteerId === "unassigned" && user) {
-      await updateDoc(doc(db, "deliveries", delivery.id), { volunteerId: user.id });
-    }
-
-    if (next === "delivered") {
-      setActive((p) => p.filter((d) => d.id !== delivery.id));
-      setHistory((p) => [{ ...delivery, status: next }, ...p]);
-      toast.success("Delivery completed! 🎉");
-    } else {
-      setActive((p) => p.map((d) => d.id === delivery.id ? { ...d, status: next } : d));
-      toast.success(`Status updated to ${statusLabels[next]}`);
-    }
-  };
+  if (next === "delivered") {
+    setActive((p) => p.filter((d) => d.id !== delivery.id));
+    setHistory((p) => [{ ...delivery, status: next, volunteerId }, ...p]);
+    toast.success("Delivery completed! 🎉");
+  } else {
+    setActive((p) =>
+      p.map((d) =>
+        d.id === delivery.id
+          ? { ...d, status: next, volunteerId }
+          : d
+      )
+    );
+    toast.success(`Status updated to ${statusLabels[next]}`);
+  }
+};
 
   const totalKgRescued = history.reduce((sum, d) => sum + (d.distanceKm || 0), 0).toFixed(1);
 
