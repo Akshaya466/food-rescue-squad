@@ -79,7 +79,7 @@ export function onUserStateChanged(callback: (user: User | null) => void) {
 export async function signInWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
   const cred = await signInWithPopup(auth, provider);
-
+  console.log("GOOGLE AUTH SUCCESS", cred.user.uid);
   // Check if user profile exists in Firestore
   const snap = await getDoc(doc(db, "users", cred.user.uid));
 
