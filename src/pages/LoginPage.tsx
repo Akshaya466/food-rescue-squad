@@ -73,9 +73,17 @@ export default function LoginPage() {
         toast.success(`Welcome, ${user.name}!`);
         navigate(routes[user.role] || "/donor/dashboard");
       }
-    } catch (error: any) {
-      toast.error("Google sign-in failed. Please try again.");
-    }
+    
+} catch (error: any) {
+  console.error("Anora Google sign-in failed:", error);
+  console.error("Error code:", error?.code);
+  console.error("Error message:", error?.message);
+
+  toast.error(
+    `${error?.code || "Error"}: ${error?.message || "Unknown error"}`
+  );
+}
+
   };
 
   const handleRoleConfirm = async () => {
