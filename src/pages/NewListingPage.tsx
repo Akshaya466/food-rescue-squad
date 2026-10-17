@@ -79,10 +79,13 @@ const handleSubmit = async () => {
     toast.success("Listing posted successfully!");
     navigate("/donor/listings");
   } catch (e) {
-    toast.error("Failed to post listing.");
-  } finally {
-    setPosting(false);
-  }
+  console.error("FAILED TO POST FOOD:", e);
+  toast.error(
+    e instanceof Error ? e.message : "Failed to post listing."
+  );
+} finally {
+  setPosting(false);
+}
 };
 
   const urgencyColors: Record<string, string> = {
