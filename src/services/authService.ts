@@ -76,34 +76,61 @@ export function onUserStateChanged(callback: (user: User | null) => void) {
   });
 }
 
+
 export async function signInWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
-  const cred = await signInWithPopup(auth, provider);
-  console.log("GOOGLE AUTH SUCCESS", cred.user.uid);
-  // Check if user profile exists in Firestore
-  const snap = await getDoc(doc(db, "users", cred.user.uid));
 
-  let user: User;
+  console.log("Step 1: Starting Google sign-in");
+
+  const cred = await signInWithPopup(auth, provider);
+
+  console.log("Step 2: Google authentication succeeded", cred.user.uid);
+
+  const userRef = doc(db, "users", cred.user.uid);
+
+  console.log("Step 3: Reading user profile");
+
+  let snap;
+
+  try {
+    snap = await getDoc(userRef);
+    console.log("Step 4: User profile read succeeded", snap.exists());
+  } catch (error) {
+    console.error("FAILED AT STEP 3: Firestore profile read", error);
+    throw error;
+  }
 
   if (snap.exists()) {
-    // Existing user — just load profile
-    user = snap.data() as User;
-  } else {
-    // New user — create profile
-    user = {
-      id: cred.user.uid,
-      name: cred.user.displayName || "User",
-      email: cred.user.email || "",
-      role: "donor", // default role
-      orgName: "",
-      phone: "",
-      location: { lat: 13.0827, lng: 80.2707, address: "Chennai" },
-      trustScore: 5.0,
-      totalRescues: 0,
-      isVerified: true, // Google accounts are verified
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, "users", cred.user.uid), user);
+    return snap.data() as User;
   }
+
+  console.log("Step 5: Creating new user profile");
+
+  const user: User = {
+    id: cred.user.uid,
+    name: cred.user.displayName || "User",
+    email: cred.user.email || "",
+    role: "donor",
+    orgName: "",
+    phone: "",
+    location: {
+      lat: 13.0827,
+      lng: 80.2707,
+      address: "Chennai",
+    },
+    trustScore: 5.0,
+    totalRescues: 0,
+    isVerified: true,
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    await setDoc(userRef, user);
+    console.log("Step 6: User profile created successfully");
+  } catch (error) {
+    console.error("FAILED AT STEP 5: Firestore profile write", error);
+    throw error;
+  }
+
   return user;
 }
