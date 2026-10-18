@@ -3,14 +3,14 @@ import {
   getDoc,
   updateDoc,
   collection,
-  addDoc,
   getDocs,
   query,
   where,
   orderBy,
 } from "firebase/firestore";
 import { db } from "@/config/firebase";
-import { User, Rating } from "@/types";
+import { User, Rating, RatingOpportunity } from "@/types";
+import { throwSparkUnavailable } from "@/services/sparkUnavailable";
 
 export async function getUserProfile(userId: string): Promise<User | null> {
   const snap = await getDoc(doc(db, "users", userId));
@@ -34,16 +34,17 @@ export async function getUserRatings(userId: string): Promise<Rating[]> {
       orderBy("createdAt", "desc")
     )
   );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Rating));
+  return snap.docs
+    .filter((d) => d.data().trusted === true)
+    .map((d) => ({ id: d.id, ...d.data() } as Rating));
 }
 
-export async function submitRating(data: Omit<Rating, "id">): Promise<Rating> {
-  const docRef = await addDoc(collection(db, "ratings"), data);
+export async function submitRating(
+  _data: Pick<Rating, "toUserId" | "listingId" | "score" | "review">
+): Promise<Rating> {
+  return throwSparkUnavailable("Submitting ratings");
+}
 
-  // Update user trust score
-  const ratings = await getUserRatings(data.toUserId);
-  const avg = ratings.reduce((s, r) => s + r.score, data.score) / (ratings.length + 1);
-  await updateDoc(doc(db, "users", data.toUserId), { trustScore: Math.round(avg * 10) / 10 });
-
-  return { ...data, id: docRef.id };
+export async function getRatingOpportunities(): Promise<RatingOpportunity[]> {
+  return throwSparkUnavailable("Loading rating opportunities");
 }

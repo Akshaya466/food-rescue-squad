@@ -15,7 +15,7 @@ export async function registerUser(data: {
   name: string;
   email: string;
   password: string;
-  role: User["role"];
+  role: Exclude<User["role"], "admin">;
   orgName?: string;
   phone: string;
   city: string;
@@ -26,7 +26,8 @@ export async function registerUser(data: {
     id: cred.user.uid,
     name: data.name,
     email: data.email,
-    role: data.role,
+    role: "donor",
+    ...(data.role !== "donor" ? { requestedRole: data.role } : {}),
     orgName: data.orgName || "",
     phone: data.phone,
     location: { lat: 13.0827, lng: 80.2707, address: data.city },
@@ -120,7 +121,7 @@ export async function signInWithGoogle(): Promise<User> {
     },
     trustScore: 5.0,
     totalRescues: 0,
-    isVerified: true,
+    isVerified: false,
     createdAt: new Date().toISOString(),
   };
 

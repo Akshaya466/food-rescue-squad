@@ -4,23 +4,21 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Star, CheckCircle, Award, Package, Heart, Shield, Pencil } from "lucide-react";
-import { getUserProfile, getUserRatings, updateUserProfile, submitRating } from "@/services/userService";
+import { getUserProfile, getUserRatings, updateUserProfile } from "@/services/userService";
 import { useState, useEffect } from "react";
 import { Rating, User } from "@/types";
 import { toast } from "sonner";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 
 export default function ProfilePage() {
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [ratingOpen, setRatingOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", phone: "", orgName: "", address: "" });
-  const [ratingForm, setRatingForm] = useState({ score: 5, review: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -63,28 +61,6 @@ export default function ProfilePage() {
       toast.success("Profile updated successfully!");
     } catch (e) {
       toast.error("Failed to update profile.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSubmitRating = async () => {
-    if (!user) return;
-    setSaving(true);
-    try {
-      const newRating = await submitRating({
-        fromUserId: user.id,
-        toUserId: user.id,
-        listingId: "self",
-        score: ratingForm.score,
-        review: ratingForm.review,
-        createdAt: new Date().toISOString(),
-      });
-      setRatings((p) => [newRating, ...p]);
-      setRatingOpen(false);
-      toast.success("Rating submitted!");
-    } catch (e) {
-      toast.error("Failed to submit rating.");
     } finally {
       setSaving(false);
     }
@@ -159,13 +135,21 @@ export default function ProfilePage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Reviews ({ratings.length})</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setRatingOpen(true)}>
-              + Add Review
+            <Button
+              size="sm"
+              variant="outline"
+              disabled
+              title="Rating opportunities and submissions require a trusted Cloud Functions backend."
+            >
+              Rating unavailable
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
+            <SparkUnavailableNotice operation="Loading rating opportunities and submitting ratings" />
             {ratings.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No reviews yet.</p>
+              <p className="text-muted-foreground text-sm">
+                No reviews yet.
+              </p>
             ) : (
               ratings.map((r) => (
                 <div key={r.id} className="border-b last:border-0 pb-4 last:pb-0">
@@ -214,41 +198,6 @@ export default function ProfilePage() {
               <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
               <Button onClick={handleSaveProfile} disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Rating Modal */}
-        <Dialog open={ratingOpen} onOpenChange={setRatingOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Submit a Rating</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Rating</Label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} onClick={() => setRatingForm(p => ({ ...p, score: s }))}>
-                      <Star className={`h-8 w-8 transition-colors ${s <= ratingForm.score ? "fill-warning text-warning" : "text-muted-foreground"}`} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Review (optional)</Label>
-                <Textarea
-                  placeholder="Write your review..."
-                  value={ratingForm.review}
-                  onChange={(e) => setRatingForm(p => ({ ...p, review: e.target.value }))}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setRatingOpen(false)}>Cancel</Button>
-              <Button onClick={handleSubmitRating} disabled={saving}>
-                {saving ? "Submitting..." : "Submit Rating"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -6,15 +6,13 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Phone, ChevronRight, Flame, Package, Truck, CheckCircle, Navigation, Award } from "lucide-react";
-import { subscribeToUnassignedDeliveries, subscribeToDeliveryHistory, updateDeliveryStatus } from "@/services/deliveryService";
+import { subscribeToUnassignedDeliveries, subscribeToDeliveryHistory } from "@/services/deliveryService";
 import { Delivery, User } from "@/types";
-import { toast } from "sonner";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/config/firebase";
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
+delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -92,34 +90,6 @@ export default function VolunteerDashboard() {
     if (unsubHistory) unsubHistory();
   };
 }, []);
-  const advanceStatus = async (delivery: Delivery) => {
-  const idx = statusPipeline.indexOf(delivery.status);
-  if (idx >= statusPipeline.length - 1) return;
-  const next = statusPipeline[idx + 1];
-  const currentUid = auth.currentUser?.uid;
-  if (!currentUid) return;
-
-  // Always assign volunteerId and update status together
-  await updateDeliveryStatus(delivery.id, next, currentUid);
-
-  if (next === "delivered") {
-    setActive((p) => p.filter((d) => d.id !== delivery.id));
-    setHistory((p) => [{
-      ...delivery,
-      status: "delivered",
-      volunteerId: currentUid
-    }, ...p]);
-    toast.success("Delivery completed! 🎉");
-  } else {
-    setActive((p) => p.map((d) =>
-      d.id === delivery.id
-        ? { ...d, status: next, volunteerId: currentUid }
-        : d
-    ));
-    toast.success(`Status updated to ${statusLabels[next]}`);
-  }
-};
-
   const totalKgRescued = history.reduce((sum, d) => sum + (d.distanceKm || 0), 0).toFixed(1);
 
 const todayStats = [
@@ -150,6 +120,7 @@ const todayStats = [
       </header>
 
       <div className="container py-4 pb-24 space-y-4">
+        <SparkUnavailableNotice operation="Advancing deliveries" />
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
           {todayStats.map((s) => (
@@ -198,7 +169,7 @@ const todayStats = [
             <div className="bg-slate-800 rounded-xl p-8 text-center border border-slate-700">
               <Truck className="h-10 w-10 mx-auto text-slate-500 mb-2" />
               <p className="text-slate-400">No active deliveries.</p>
-              <p className="text-slate-500 text-sm mt-1">Stay online — deliveries appear here when collectors claim food.</p>
+              <p className="text-slate-500 text-sm mt-1">New delivery claims and status updates require a trusted backend.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -257,11 +228,10 @@ const todayStats = [
                     <div className="flex gap-2">
                       <Button
                         className="flex-1 bg-green-500 text-black hover:bg-green-400 font-semibold"
-                        onClick={() => advanceStatus(d)}
+                        disabled
+                        title="Delivery status updates require a trusted Cloud Functions backend."
                       >
-                        {d.status === "picked_up" ? "Mark Delivered ✓" :
-                         d.status === "en_route" ? "Mark Picked Up" : "Start Route"}
-                        <ChevronRight className="h-4 w-4 ml-1" />
+                        Delivery updates unavailable
                       </Button>
                       <Button
                         variant="outline"

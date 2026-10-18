@@ -12,12 +12,16 @@ import {
 } from "firebase/firestore";
 import { db } from "@/config/firebase";
 import { FoodListing } from "@/types";
+import { synchronizeListingAddress } from "@/services/listingUpdate";
+import { throwSparkUnavailable } from "@/services/sparkUnavailable";
 
 const COL = "listings";
 
 // Strip undefined values
-function clean(data: any) {
-  return JSON.parse(JSON.stringify(data, (_, v) => v === undefined ? null : v));
+function clean<T>(data: T): T {
+  return JSON.parse(
+    JSON.stringify(data, (_, value: unknown) => value === undefined ? null : value)
+  ) as T;
 }
 
 export async function createListing(
@@ -48,7 +52,13 @@ export async function updateListing(
   id: string,
   data: Partial<FoodListing>
 ): Promise<FoodListing> {
-  await updateDoc(doc(db, COL, id), clean(data));
+  let updates = data;
+  if (typeof data.address === "string") {
+    const current = await getListingById(id);
+    if (!current) throw new Error("Listing not found");
+    updates = synchronizeListingAddress(current.location, data);
+  }
+  await updateDoc(doc(db, COL, id), clean(updates));
   const updated = await getListingById(id);
   if (!updated) throw new Error("Listing not found");
   return updated;
@@ -59,10 +69,13 @@ export async function deleteListing(id: string): Promise<void> {
 }
 
 export async function claimListing(
-  id: string,
-  collectorId: string
+  _id: string
 ): Promise<FoodListing> {
-  return updateListing(id, { status: "claimed", claimedBy: collectorId });
+  return throwSparkUnavailable("Claiming food");
+}
+
+export async function unclaimListing(_id: string): Promise<void> {
+  return throwSparkUnavailable("Unclaiming food");
 }
 
 export async function getListingsByDonor(donorId: string): Promise<FoodListing[]> {

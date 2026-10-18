@@ -6,14 +6,14 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Package } from "lucide-react";
-import { getAllListings, claimListing } from "@/services/foodService";
+import { getAllListings } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
-import { toast } from "sonner";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
+import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -60,16 +60,10 @@ export default function CollectorMapPage() {
   return () => unsubscribeAuth();
 }, []);
 
-  const handleClaim = async (id: string) => {
-  if (!auth.currentUser) return;
-  await claimListing(id, auth.currentUser.uid);
-  setListings((p) => p.filter((l) => l.id !== id));
-  toast.success("Food claimed successfully!");
-};
-
   return (
     <DashboardLayout role="collector">
       <div className="space-y-4">
+        <SparkUnavailableNotice operation="Claiming food" />
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Live Map</h1>
@@ -119,10 +113,11 @@ export default function CollectorMapPage() {
                       </p>
                       {l.description && <p className="text-xs">{l.description}</p>}
                       <button
-                        className="w-full bg-green-600 text-white text-sm py-2 rounded font-semibold hover:bg-green-700 transition-colors"
-                        onClick={() => handleClaim(l.id)}
+                        className="w-full bg-green-600 text-white text-sm py-2 rounded font-semibold opacity-50 cursor-not-allowed"
+                        disabled
+                        title="Claiming requires a trusted Cloud Functions backend."
                       >
-                        ✓ Claim This Food
+                        Claim unavailable
                       </button>
                     </div>
                   </Popup>

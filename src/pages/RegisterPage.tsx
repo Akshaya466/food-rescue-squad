@@ -13,6 +13,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { registerUser } from "@/services/authService";
 import { signInWithGoogle } from "@/services/authService";
+import { updateUserProfile } from "@/services/userService";
+import { User } from "@/types";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required").max(100),
@@ -22,20 +24,24 @@ const registerSchema = z.object({
   orgName: z.string().optional(),
   phone: z.string().min(10, "Enter a valid phone number").max(15),
   city: z.string().min(2, "City is required"),
-  terms: z.literal(true, { errorMap: () => ({ message: "You must accept the terms" }) }),
+  terms: z.boolean().refine((accepted) => accepted, {
+    message: "You must accept the terms",
+  }),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
+type RegistrationRole = Exclude<User["role"], "admin">;
+const registrationRoles: RegistrationRole[] = ["donor", "collector", "volunteer"];
 
 export default function RegisterPage() {
-  const [role, setRole] = useState<string>("donor");
+  const [role, setRole] = useState<RegistrationRole>("donor");
   const navigate = useNavigate();
   const { register, handleSubmit, formState: { errors, isSubmitting }, setValue, watch } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { terms: false as any },
+    defaultValues: { terms: false },
   });
 
   const onSubmit = async (data: RegisterForm) => {
@@ -44,13 +50,16 @@ export default function RegisterPage() {
         name: data.name,
         email: data.email,
         password: data.password,
-        role: role as any,
+        role,
         orgName: data.orgName,
         phone: data.phone,
         city: data.city,
       });
 
       toast.success("Account created successfully!");
+      if (user.requestedRole) {
+        toast.info("Your account is active as a donor. Collector or volunteer access is pending admin approval.");
+      }
 
       const routes: Record<string, string> = {
         donor: "/donor/dashboard",
@@ -58,11 +67,21 @@ export default function RegisterPage() {
         volunteer: "/volunteer/dashboard",
       };
       navigate(routes[user.role] || "/donor/dashboard");
-    } catch (error: any) {
-      if (error.code === "auth/email-already-in-use") {
+    } catch (error: unknown) {
+      const code =
+        error instanceof Error &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : undefined;
+      if (code === "auth/email-already-in-use") {
         toast.error("An account with this email already exists.");
       } else {
-        toast.error(error.message || "Registration failed. Please try again.");
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : "Registration failed. Please try again."
+        );
       }
     }
   };
@@ -80,7 +99,15 @@ export default function RegisterPage() {
           <CardDescription>Join Annora and start making an impact</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <Tabs value={role} onValueChange={setRole}>
+          <Tabs
+            value={role}
+            onValueChange={(value) => {
+              const selectedRole = registrationRoles.find(
+                (candidate) => candidate === value
+              );
+              if (selectedRole) setRole(selectedRole);
+            }}
+          >
             <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger value="donor">Donor</TabsTrigger>
               <TabsTrigger value="collector">Collector</TabsTrigger>
@@ -133,7 +160,9 @@ export default function RegisterPage() {
               <Checkbox
                 id="terms"
                 checked={watch("terms")}
-                onCheckedChange={(checked) => setValue("terms", checked as boolean as any, { shouldValidate: true })}
+                onCheckedChange={(checked) =>
+                  setValue("terms", checked === true, { shouldValidate: true })
+                }
               />
               <Label htmlFor="terms" className="text-sm font-normal leading-tight">
                 I agree to the <a href="#" className="text-primary hover:underline">Terms of Service</a> and{" "}
@@ -159,6 +188,12 @@ export default function RegisterPage() {
   onClick={async () => {
     try {
       const user = await signInWithGoogle();
+      if (user.role === "donor" && role !== "donor") {
+        await updateUserProfile(user.id, {
+          requestedRole: role,
+        });
+        toast.info("Your request was submitted. You can use donor features while awaiting approval.");
+      }
       toast.success(`Welcome, ${user.name}!`);
       const routes: Record<string, string> = {
         donor: "/donor/dashboard",
@@ -166,7 +201,7 @@ export default function RegisterPage() {
         volunteer: "/volunteer/dashboard",
       };
       navigate(routes[user.role] || "/donor/dashboard");
-    } catch (error: any) {
+    } catch {
       toast.error("Google sign-in failed. Please try again.");
     }
   }}

@@ -44,21 +44,31 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     try {
       const user = await loginUser(data.email, data.password);
-      if (user.role !== role) {
+      if (user.role !== "admin" && user.role !== role) {
         toast.error(`This account is registered as a ${user.role}, not a ${role}.`);
         return;
       }
       toast.success(`Welcome back, ${user.name}!`);
       navigate(routes[user.role] || "/donor/dashboard");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const code =
+        error instanceof Error &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : undefined;
       if (
-        error.code === "auth/user-not-found" ||
-        error.code === "auth/wrong-password" ||
-        error.code === "auth/invalid-credential"
+        code === "auth/user-not-found" ||
+        code === "auth/wrong-password" ||
+        code === "auth/invalid-credential"
       ) {
         toast.error("Invalid email or password. Please try again.");
       } else {
-        toast.error(error.message || "Login failed. Please try again.");
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : "Login failed. Please try again."
+        );
       }
     }
   };
@@ -74,13 +84,18 @@ export default function LoginPage() {
         navigate(routes[user.role] || "/donor/dashboard");
       }
     
-} catch (error: any) {
+} catch (error: unknown) {
+  const code =
+    error instanceof Error && "code" in error && typeof error.code === "string"
+      ? error.code
+      : undefined;
+  const message = error instanceof Error ? error.message : undefined;
   console.error("Anora Google sign-in failed:", error);
-  console.error("Error code:", error?.code);
-  console.error("Error message:", error?.message);
+  console.error("Error code:", code);
+  console.error("Error message:", message);
 
   toast.error(
-    `${error?.code || "Error"}: ${error?.message || "Unknown error"}`
+    `${code || "Error"}: ${message || "Unknown error"}`
   );
 }
 
@@ -88,11 +103,16 @@ export default function LoginPage() {
 
   const handleRoleConfirm = async () => {
     if (!googleUser) return;
-    await updateUserProfile(googleUser.id, { role: selectedRole as any });
-    const updated = { ...googleUser, role: selectedRole as any };
+    await updateUserProfile(googleUser.id, {
+      requestedRole: selectedRole as "donor" | "collector" | "volunteer",
+    });
     setRoleModal(false);
-    toast.success(`Welcome, ${googleUser.name}!`);
-    navigate(routes[selectedRole] || "/donor/dashboard");
+    toast.success(
+      selectedRole === "donor"
+        ? `Welcome, ${googleUser.name}!`
+        : "Your request was submitted. You can use donor features while awaiting approval."
+    );
+    navigate(routes.donor);
   };
 
   return (

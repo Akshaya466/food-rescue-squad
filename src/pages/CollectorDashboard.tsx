@@ -1,6 +1,4 @@
-import { createNotification } from "@/services/notificationService";
-import { subscribeToListings, claimListing, updateListing } from "@/services/foodService";
-import { createDelivery } from "@/services/deliveryService";
+import { subscribeToListings } from "@/services/foodService";
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,12 +11,12 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from "lucide-react";
 import { FoodListing, User } from "@/types";
-import { toast } from "sonner";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
+import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -130,43 +128,11 @@ setAllData(unique);
     { label: "Trust Score", value: user ? `${user.trustScore} ★` : "—", icon: Star },
   ];
 
-  const handleClaim = async (id: string) => {
-    if (!user || !currentUid) return;
-    await claimListing(id, currentUid);
-    const claimed = allData.find(l => l.id === id);
-    if (claimed) {
-      await createDelivery({
-        listingId: claimed.id,
-        volunteerId: "unassigned",
-        donorId: claimed.donorId,
-        status: "assigned",
-        pickupAddress: claimed.address,
-        dropAddress: user.location?.address || "NGO Location",
-        estimatedTime: "30 mins",
-        distanceKm: parseFloat((Math.random() * 5 + 0.5).toFixed(1)),
-        foodDetails: `${claimed.foodType} — ${claimed.quantity} ${claimed.unit}`,
-      });
-      await createNotification({
-        userId: claimed.donorId,
-        type: "claim",
-        title: "Food Claimed! 🎉",
-        message: `${user.name} claimed your ${claimed.foodType} listing.`,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      });
-    }
-    toast.success("Food claimed! The donor will be notified.");
-  };
-
-  const handleUnclaim = async (id: string) => {
-    await updateListing(id, { status: "active", claimedBy: null });
-    toast.success("Listing unclaimed.");
-  };
-
   return (
     <DashboardLayout role="collector">
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Available Food Nearby</h1>
+        <SparkUnavailableNotice operation="Claiming and unclaiming food" />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -265,8 +231,8 @@ setAllData(unique);
                           <Button variant="outline" size="sm" className="flex-1" onClick={() => setViewTarget(l)}>
                             Details
                           </Button>
-                          <Button className="flex-1" size="sm" onClick={() => handleClaim(l.id)}>
-                            Claim
+                          <Button className="flex-1" size="sm" disabled title="Claiming requires a trusted Cloud Functions backend.">
+                            Claim unavailable
                           </Button>
                         </div>
                       </div>
@@ -294,9 +260,10 @@ setAllData(unique);
                         variant="outline"
                         size="sm"
                         className="text-destructive border-destructive/30"
-                        onClick={() => handleUnclaim(l.id)}
+                        disabled
+                        title="Unclaiming requires a trusted Cloud Functions backend."
                       >
-                        <X className="h-3 w-3 mr-1" /> Unclaim
+                        <X className="h-3 w-3 mr-1" /> Unclaim unavailable
                       </Button>
                     </CardContent>
                   </Card>
@@ -330,10 +297,11 @@ setAllData(unique);
                       <p className="text-xs">{l.quantity} {l.unit} · {l.category}</p>
                       <p className="text-xs text-gray-500">{l.address}</p>
                       <button
-                        className="w-full bg-green-600 text-white text-xs py-1.5 rounded font-semibold hover:bg-green-700"
-                        onClick={() => handleClaim(l.id)}
+                        className="w-full bg-green-600 text-white text-xs py-1.5 rounded font-semibold opacity-50 cursor-not-allowed"
+                        disabled
+                        title="Claiming requires a trusted Cloud Functions backend."
                       >
-                        Claim Food
+                        Claim unavailable
                       </button>
                     </div>
                   </Popup>
@@ -370,8 +338,8 @@ setAllData(unique);
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
-              <Button onClick={() => { handleClaim(viewTarget!.id); setViewTarget(null); }}>
-                Claim Food
+              <Button disabled title="Claiming requires a trusted Cloud Functions backend.">
+                Claim unavailable
               </Button>
             </DialogFooter>
           </DialogContent>

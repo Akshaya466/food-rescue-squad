@@ -1,37 +1,21 @@
 import {
   collection,
-  addDoc,
   getDocs,
-  updateDoc,
-  doc,
   query,
   where,
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/config/firebase";
 import { Delivery } from "@/types";
+import { throwSparkUnavailable } from "@/services/sparkUnavailable";
 
 const COL = "deliveries";
 
-export async function createDelivery(
-  data: Omit<Delivery, "id" | "createdAt">
-): Promise<Delivery> {
-  const clean = JSON.parse(JSON.stringify({
-    ...data,
-    createdAt: new Date().toISOString(),
-  }));
-  const docRef = await addDoc(collection(db, COL), clean);
-  return { ...clean, id: docRef.id };
-}
-
 export async function updateDeliveryStatus(
-  id: string,
-  status: Delivery["status"],
-  volunteerId?: string
+  _id: string,
+  _status: Delivery["status"]
 ): Promise<void> {
-  const update: any = { status };
-  if (volunteerId) update.volunteerId = volunteerId;
-  await updateDoc(doc(db, COL, id), update);
+  return throwSparkUnavailable("Advancing deliveries");
 }
 
 export function subscribeToUnassignedDeliveries(

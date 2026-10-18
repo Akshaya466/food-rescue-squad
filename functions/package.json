@@ -1,0 +1,21 @@
+{
+  "name": "anora-functions",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check index.js",
+    "test": "node --test",
+    "grant-admin": "node scripts/set-admin.js",
+    "migrate-roles": "node scripts/migrate-roles.js",
+    "migrate-deliveries": "node scripts/migrate-deliveries.js",
+    "migrate-ratings": "node scripts/migrate-ratings.js",
+    "audit-notifications": "node scripts/audit-notifications.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  }
+}

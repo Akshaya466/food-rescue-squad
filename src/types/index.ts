@@ -8,7 +8,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'donor' | 'collector' | 'volunteer';
+  role: 'donor' | 'collector' | 'volunteer' | 'admin';
+  requestedRole?: 'donor' | 'collector' | 'volunteer';
   orgName?: string;
   phone: string;
   location: Location;
@@ -71,6 +72,18 @@ export interface Rating {
   score: number;
   review: string;
   createdAt: string;
+}
+
+export interface RatingOpportunityParticipant {
+  userId: string;
+  name: string;
+  role: User["role"];
+}
+
+export interface RatingOpportunity {
+  listingId: string;
+  foodDetails: string;
+  participants: RatingOpportunityParticipant[];
 }
 
 export interface Notification {

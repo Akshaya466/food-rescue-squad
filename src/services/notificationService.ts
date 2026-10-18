@@ -1,6 +1,5 @@
 import {
   collection,
-  addDoc,
   getDocs,
   updateDoc,
   doc,
@@ -13,12 +12,6 @@ import { db } from "@/config/firebase";
 import { Notification } from "@/types";
 
 const COL = "notifications";
-
-export async function createNotification(
-  data: Omit<Notification, "id">
-): Promise<void> {
-  await addDoc(collection(db, COL), data);
-}
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   const snap = await getDocs(

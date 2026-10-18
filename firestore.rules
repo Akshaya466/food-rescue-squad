@@ -1,0 +1,243 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && 'admin' in request.auth.token
+        && request.auth.token.admin == true;
+    }
+
+    function hasRole(role) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    function validLocation(value) {
+      return value is map
+        && value.keys().hasAll(['lat', 'lng', 'address'])
+        && value.keys().hasOnly(['lat', 'lng', 'address'])
+        && value.lat is number
+        && value.lat >= -90
+        && value.lat <= 90
+        && value.lng is number
+        && value.lng >= -180
+        && value.lng <= 180
+        && value.address is string
+        && value.address.size() <= 500;
+    }
+
+    function validUserCreate(userId, data) {
+      return data.keys().hasAll([
+          'id', 'name', 'email', 'role', 'orgName', 'phone', 'location',
+          'trustScore', 'totalRescues', 'isVerified', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'email', 'role', 'orgName', 'phone', 'location',
+          'trustScore', 'totalRescues', 'isVerified', 'createdAt',
+          'requestedRole'
+        ])
+        && data.id == userId
+        && data.email is string
+        && data.email.size() <= 255
+        && (
+          !('email' in request.auth.token)
+          || data.email == request.auth.token.email
+        )
+        && data.role == 'donor'
+        && (!('requestedRole' in data)
+          || data.requestedRole in ['collector', 'volunteer'])
+        && data.name is string
+        && data.name.size() >= 2
+        && data.name.size() <= 100
+        && data.orgName is string
+        && data.orgName.size() <= 200
+        && data.phone is string
+        && data.phone.size() <= 15
+        && validLocation(data.location)
+        && data.trustScore == 5
+        && data.totalRescues == 0
+        && data.isVerified == false
+        && data.createdAt is string
+        && data.createdAt.size() <= 40;
+    }
+
+    function validListing(data) {
+      return data.keys().hasAll([
+          'donorId', 'donorName', 'foodType', 'description', 'quantity',
+          'unit', 'category', 'pickupWindowStart', 'pickupWindowEnd',
+          'address', 'location', 'photos', 'status', 'claimedBy',
+          'dietaryTags', 'urgencyLevel', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'donorId', 'donorName', 'foodType', 'description', 'quantity',
+          'unit', 'category', 'pickupWindowStart', 'pickupWindowEnd',
+          'address', 'location', 'photos', 'status', 'claimedBy',
+          'dietaryTags', 'urgencyLevel', 'createdAt'
+        ])
+        && data.donorId == request.auth.uid
+        && data.donorName is string
+        && data.donorName.size() <= 200
+        && data.foodType is string
+        && data.foodType.size() > 0
+        && data.foodType.size() <= 150
+        && data.description is string
+        && data.description.size() <= 5000
+        && data.quantity is number
+        && data.quantity > 0
+        && data.quantity <= 1000000
+        && data.unit in ['kg', 'portions', 'packets']
+        && data.category in ['cooked', 'raw', 'packaged', 'beverages']
+        && data.pickupWindowStart is string
+        && data.pickupWindowStart.size() <= 40
+        && data.pickupWindowEnd is string
+        && data.pickupWindowEnd.size() <= 40
+        && data.address is string
+        && data.address.size() <= 500
+        && validLocation(data.location)
+        && data.location.address == data.address
+        && data.photos is list
+        && data.photos.size() == 0
+        && data.status == 'active'
+        && data.claimedBy == null
+        && data.dietaryTags is list
+        && data.dietaryTags.size() <= 20
+        && data.dietaryTags.toSet().hasOnly([
+          'Veg', 'Vegan', 'Halal', 'Jain', 'Contains Allergens'
+        ])
+        && data.dietaryTags.toSet().size() == data.dietaryTags.size()
+        && data.urgencyLevel in ['low', 'medium', 'high']
+        && data.createdAt is string
+        && data.createdAt.size() <= 40;
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn()
+        && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && validUserCreate(userId, request.resource.data);
+
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'name', 'phone', 'orgName', 'location', 'requestedRole'
+          ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() <= 15
+        && request.resource.data.orgName is string
+        && request.resource.data.orgName.size() <= 200
+        && validLocation(request.resource.data.location)
+        && request.resource.data.location.lat == resource.data.location.lat
+        && request.resource.data.location.lng == resource.data.location.lng
+        && (
+          !('requestedRole' in request.resource.data)
+          || request.resource.data.requestedRole in ['donor', 'collector', 'volunteer']
+        );
+
+      allow delete: if false;
+    }
+
+    match /listings/{listingId} {
+      allow get, list: if isAdmin()
+        || hasRole('collector')
+        || (hasRole('donor') && resource.data.donorId == request.auth.uid);
+
+      allow create: if hasRole('donor')
+        && validListing(request.resource.data)
+        && request.resource.data.donorName
+          == (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgName != ''
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgName
+              : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
+          );
+
+      allow update: if (
+          hasRole('donor')
+          && resource.data.donorId == request.auth.uid
+          && resource.data.status == 'active'
+          && resource.data.claimedBy == null
+          && request.resource.data.status == 'active'
+          && request.resource.data.claimedBy == resource.data.claimedBy
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'foodType', 'description', 'quantity',
+              'unit', 'category', 'urgencyLevel', 'address', 'location'
+            ])
+          && request.resource.data.foodType is string
+          && request.resource.data.foodType.size() > 0
+          && request.resource.data.foodType.size() <= 150
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 5000
+          && request.resource.data.quantity is number
+          && request.resource.data.quantity > 0
+          && request.resource.data.quantity <= 1000000
+          && request.resource.data.unit in ['kg', 'portions', 'packets']
+          && request.resource.data.category in ['cooked', 'raw', 'packaged', 'beverages']
+          && request.resource.data.urgencyLevel in ['low', 'medium', 'high']
+          && request.resource.data.address is string
+          && request.resource.data.address.size() <= 500
+          && validLocation(request.resource.data.location)
+          && request.resource.data.location.lat == resource.data.location.lat
+          && request.resource.data.location.lng == resource.data.location.lng
+          && request.resource.data.location.address == request.resource.data.address
+        );
+
+      allow delete: if resource.data.status == 'active'
+        && (
+          isAdmin()
+          || (
+            hasRole('donor')
+            && resource.data.donorId == request.auth.uid
+          )
+        );
+    }
+
+    match /notifications/{notificationId} {
+      allow get, list: if signedIn()
+        && resource.data.userId == request.auth.uid;
+      allow create, delete: if false;
+
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.isRead == false
+        && request.resource.data.isRead == true
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isRead']);
+    }
+
+    match /ratings/{ratingId} {
+      allow get, list: if signedIn()
+        && resource.data.toUserId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /deliveries/{deliveryId} {
+      allow get, list: if isAdmin()
+        || (
+          hasRole('volunteer')
+          && (
+            resource.data.status == 'assigned'
+            || resource.data.volunteerId == request.auth.uid
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

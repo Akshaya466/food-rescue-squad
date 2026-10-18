@@ -11,6 +11,7 @@ import { FoodListing, User } from "@/types";
 import { toast } from "sonner";
 import { db } from "@/config/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 
 const COLORS = ["hsl(142, 72%, 29%)", "hsl(24, 95%, 53%)", "hsl(217, 91%, 60%)", "hsl(38, 92%, 50%)"];
 
@@ -175,7 +176,7 @@ export default function AdminDashboard() {
                         </td>
                         <td className="p-4">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"
-                            onClick={() => setDeleteTarget(l)}>
+                            onClick={() => setDeleteTarget(l)} disabled={l.status !== "active"}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </td>
@@ -192,6 +193,9 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader><CardTitle className="text-lg">Registered Users ({users.length})</CardTitle></CardHeader>
           <CardContent className="p-0">
+            <div className="p-4">
+              <SparkUnavailableNotice operation="Approving role requests and changing verification" />
+            </div>
             {users.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
                 <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
@@ -205,6 +209,8 @@ export default function AdminDashboard() {
                       <th className="p-4 font-medium">Name</th>
                       <th className="p-4 font-medium">Email</th>
                       <th className="p-4 font-medium">Role</th>
+                      <th className="p-4 font-medium">Role Request</th>
+                      <th className="p-4 font-medium">Verification</th>
                       <th className="p-4 font-medium">Org</th>
                       <th className="p-4 font-medium">Joined</th>
                     </tr>
@@ -215,6 +221,23 @@ export default function AdminDashboard() {
                         <td className="p-4 font-medium">{u.name}</td>
                         <td className="p-4 text-muted-foreground">{u.email}</td>
                         <td className="p-4 capitalize">{u.role}</td>
+                        <td className="p-4">
+                          {u.requestedRole === "collector" || u.requestedRole === "volunteer" ? (
+                            <Button size="sm" disabled title="Role approval requires a trusted Cloud Functions backend.">
+                              Approval unavailable
+                            </Button>
+                          ) : "—"}
+                        </td>
+                        <td className="p-4">
+                          <Button
+                            size="sm"
+                            variant={u.isVerified ? "outline" : "secondary"}
+                            disabled
+                            title="Changing verification requires a trusted Cloud Functions backend."
+                          >
+                            Verification unavailable
+                          </Button>
+                        </td>
                         <td className="p-4 text-muted-foreground">{u.orgName || "—"}</td>
                         <td className="p-4 text-muted-foreground text-xs">
                           {new Date(u.createdAt).toLocaleDateString("en-IN")}

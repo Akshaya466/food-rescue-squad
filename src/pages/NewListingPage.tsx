@@ -11,16 +11,38 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight, MapPin, Check } from "lucide-react";
 import { toast } from "sonner";
 import { createListing } from "@/services/foodService";
-import { User } from "@/types";
+import { FoodListing, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { getUserProfile } from "@/services/userService";
 
 const dietaryOptions = ["Veg", "Vegan", "Halal", "Jain", "Contains Allergens"];
+const listingCategories: FoodListing["category"][] = [
+  "cooked",
+  "raw",
+  "packaged",
+  "beverages",
+];
+const listingUnits: FoodListing["unit"][] = ["kg", "portions", "packets"];
+
+type NewListingForm = {
+  foodType: string;
+  category: FoodListing["category"];
+  description: string;
+  quantity: string;
+  unit: FoodListing["unit"];
+  dietaryTags: string[];
+  address: string;
+  pickupDate: string;
+  pickupStart: string;
+  pickupEnd: string;
+  specialInstructions: string;
+  urgencyLevel: FoodListing["urgencyLevel"];
+};
 
 export default function NewListingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<NewListingForm>({
     foodType: "",
     category: "cooked" as const,
     description: "",
@@ -35,7 +57,10 @@ export default function NewListingPage() {
     urgencyLevel: "medium" as const,
   });
 
-  const update = (field: string, value: any) =>
+  const update = <K extends keyof NewListingForm,>(
+    field: K,
+    value: NewListingForm[K]
+  ) =>
     setForm((p) => ({ ...p, [field]: value }));
 
   const toggleTag = (tag: string) => {
@@ -126,7 +151,10 @@ const handleSubmit = async () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Category</Label>
-                    <Select value={form.category} onValueChange={(v) => update("category", v)}>
+                    <Select value={form.category} onValueChange={(value) => {
+                      const category = listingCategories.find((option) => option === value);
+                      if (category) update("category", category);
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="cooked">Cooked</SelectItem>
@@ -138,7 +166,10 @@ const handleSubmit = async () => {
                   </div>
                   <div className="space-y-2">
                     <Label>Unit</Label>
-                    <Select value={form.unit} onValueChange={(v) => update("unit", v)}>
+                    <Select value={form.unit} onValueChange={(value) => {
+                      const unit = listingUnits.find((option) => option === value);
+                      if (unit) update("unit", unit);
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="kg">Kilograms</SelectItem>

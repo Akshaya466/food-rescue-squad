@@ -18,6 +18,10 @@ import { getUserProfile } from "@/services/userService";
 import { onAuthStateChanged } from "firebase/auth";
 import { subscribeToListingsByDonor } from "@/services/foodService";
 
+const listingUnits = ["kg", "portions", "packets"] as const;
+const listingCategories = ["cooked", "raw", "packaged", "beverages"] as const;
+const listingUrgencies = ["low", "medium", "high"] as const;
+
 export default function MyListingsPage() {
   const [listings, setListings] = useState<FoodListing[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<FoodListing | null>(null);
@@ -137,7 +141,14 @@ export default function MyListingsPage() {
                               disabled={l.status === "claimed" || l.status === "delivered"}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Delete" onClick={() => setDeleteTarget(l)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              title="Delete"
+                              onClick={() => setDeleteTarget(l)}
+                              disabled={l.status !== "active"}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -199,7 +210,10 @@ export default function MyListingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Unit</Label>
-                  <Select value={editForm.unit} onValueChange={(v) => setEditForm(p => ({ ...p, unit: v as any }))}>
+                  <Select value={editForm.unit} onValueChange={(value) => {
+                    const unit = listingUnits.find((option) => option === value);
+                    if (unit) setEditForm((previous) => ({ ...previous, unit }));
+                  }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="kg">Kilograms</SelectItem>
@@ -211,7 +225,10 @@ export default function MyListingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={editForm.category} onValueChange={(v) => setEditForm(p => ({ ...p, category: v as any }))}>
+                <Select value={editForm.category} onValueChange={(value) => {
+                  const category = listingCategories.find((option) => option === value);
+                  if (category) setEditForm((previous) => ({ ...previous, category }));
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cooked">Cooked</SelectItem>
@@ -223,7 +240,10 @@ export default function MyListingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Urgency</Label>
-                <Select value={editForm.urgencyLevel} onValueChange={(v) => setEditForm(p => ({ ...p, urgencyLevel: v as any }))}>
+                <Select value={editForm.urgencyLevel} onValueChange={(value) => {
+                  const urgencyLevel = listingUrgencies.find((option) => option === value);
+                  if (urgencyLevel) setEditForm((previous) => ({ ...previous, urgencyLevel }));
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="low">Low</SelectItem>
