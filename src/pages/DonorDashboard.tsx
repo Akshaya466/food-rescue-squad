@@ -10,6 +10,7 @@ import { FoodListing, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { getUserProfile } from "@/services/userService";
 import { onAuthStateChanged } from "firebase/auth";
+import { CollectorAccessPendingNotice } from "@/components/CollectorAccessPendingNotice";
 
 export default function DonorDashboard() {
   const [listings, setListings] = useState<FoodListing[]>([]);
@@ -48,6 +49,7 @@ export default function DonorDashboard() {
   return (
     <DashboardLayout role="donor">
       <div className="space-y-6">
+        <CollectorAccessPendingNotice user={user} />
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">

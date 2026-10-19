@@ -44,11 +44,22 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     try {
       const user = await loginUser(data.email, data.password);
-      if (user.role !== "admin" && user.role !== role) {
+      const collectorRequestPending =
+        user.role === "donor" && user.requestedRole === "collector";
+      if (
+        user.role !== "admin" &&
+        user.role !== role &&
+        !collectorRequestPending
+      ) {
         toast.error(`This account is registered as a ${user.role}, not a ${role}.`);
         return;
       }
       toast.success(`Welcome back, ${user.name}!`);
+      if (collectorRequestPending) {
+        toast.info(
+          "Collector access pending approval. You can use donor features while awaiting approval."
+        );
+      }
       navigate(routes[user.role] || "/donor/dashboard");
     } catch (error: unknown) {
       const code =
@@ -76,6 +87,13 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       const user = await signInWithGoogle();
+      if (user.role === "donor" && user.requestedRole === "collector") {
+        toast.info(
+          "Collector access pending approval. You can use donor features while awaiting approval."
+        );
+        navigate(routes.donor);
+        return;
+      }
       if (!user.role || user.role === "donor") {
         setGoogleUser(user);
         setRoleModal(true);
