@@ -15,6 +15,7 @@ import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
 import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -76,6 +77,7 @@ export default function CollectorDashboard() {
   const [viewTarget, setViewTarget] = useState<FoodListing | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
+  const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribeListings: (() => void) | null = null;
@@ -91,13 +93,14 @@ export default function CollectorDashboard() {
         const profile = await getUserProfile(firebaseUser.uid);
         setUser(profile);
 
+        setListingError(null);
         unsubscribeListings = subscribeToListings((data) => {
           // Deduplicate by id
           const unique = data.filter(
   (l, index, self) => index === self.findIndex((t) => t.id === l.id)
 );
 setAllData(unique);
-        });
+        }, (error) => setListingError(error.message));
       }
     });
 
@@ -133,6 +136,12 @@ setAllData(unique);
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Available Food Nearby</h1>
         <SparkUnavailableNotice operation="Claiming and unclaiming food" />
+        {listingError && (
+          <Alert variant="destructive">
+            <AlertTitle>Could not load available food</AlertTitle>
+            <AlertDescription>{listingError}</AlertDescription>
+          </Alert>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -284,10 +293,7 @@ setAllData(unique);
               {filteredListings.map((l) => (
                 <Marker
                   key={l.id}
-                  position={[
-                    l.location.lat + (Math.random() - 0.5) * 0.02,
-                    l.location.lng + (Math.random() - 0.5) * 0.02,
-                  ]}
+                  position={[l.location.lat, l.location.lng]}
                   icon={getMarkerIcon(l)}
                 >
                   <Popup>

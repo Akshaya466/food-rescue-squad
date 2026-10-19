@@ -86,7 +86,8 @@ export async function getListingsByDonor(donorId: string): Promise<FoodListing[]
 }
 
 export function subscribeToListings(
-  callback: (listings: FoodListing[]) => void
+  callback: (listings: FoodListing[]) => void,
+  onError?: (error: Error) => void
 ): () => void {
   return onSnapshot(
     collection(db, COL),
@@ -95,10 +96,7 @@ export function subscribeToListings(
     },
     (error) => {
       console.error("subscribeToListings error:", error);
-      // Fallback to one-time fetch
-      getDocs(collection(db, COL)).then((snap) => {
-        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FoodListing)));
-      });
+      onError?.(error);
     }
   );
 }

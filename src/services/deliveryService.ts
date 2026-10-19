@@ -19,12 +19,20 @@ export async function updateDeliveryStatus(
 }
 
 export function subscribeToUnassignedDeliveries(
-  callback: (deliveries: Delivery[]) => void
+  callback: (deliveries: Delivery[]) => void,
+  onError?: (error: Error) => void
 ): () => void {
   const q = query(collection(db, COL), where("status", "==", "assigned"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Delivery)));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Delivery)));
+    },
+    (error) => {
+      console.error("subscribeToUnassignedDeliveries error:", error);
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeToDeliveryHistory(

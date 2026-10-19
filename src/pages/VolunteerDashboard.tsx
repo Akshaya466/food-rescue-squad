@@ -12,6 +12,7 @@ import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
 import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
+import { getCurrentCoordinates } from "@/services/locationService";
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -21,12 +22,6 @@ L.Icon.Default.mergeOptions({
 
 const volunteerIcon = new L.Icon({
   iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
-});
-
-const pickupIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
 });
@@ -52,13 +47,14 @@ function RecenterMap({ center }: { center: [number, number] }) {
 }
 
 export default function VolunteerDashboard() {
-  const [isOnline, setIsOnline] = useState(true);
   const [active, setActive] = useState<Delivery[]>([]);
+  const [deliveryFeedError, setDeliveryFeedError] = useState<string | null>(null);
   const [history, setHistory] = useState<Delivery[]>([]);
   const [tab, setTab] = useState<"active" | "history" | "map">("active");
   const [zone, setZone] = useState("3");
   const [user, setUser] = useState<User | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<[number, number]>([13.0827, 80.2707]);
+  const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
   let unsubActive: (() => void) | null = null;
@@ -72,15 +68,23 @@ export default function VolunteerDashboard() {
       const profile = await getUserProfile(firebaseUser.uid);
       setUser(profile);
 
-      unsubActive = subscribeToUnassignedDeliveries(setActive);
+      unsubActive = subscribeToUnassignedDeliveries(
+        (deliveries) => {
+          setActive(deliveries);
+          setDeliveryFeedError(null);
+        },
+        (error) => setDeliveryFeedError(error.message)
+      );
       unsubHistory = subscribeToDeliveryHistory(firebaseUser.uid, setHistory);
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
-          () => setCurrentLocation([13.0827, 80.2707])
-        );
-      }
+      getCurrentCoordinates()
+        .then(({ lat, lng }) => setCurrentLocation([lat, lng]))
+        .catch((error: unknown) => {
+          setCurrentLocation(null);
+          setLocationError(
+            error instanceof Error ? error.message : "Could not get your location."
+          );
+        });
     }
   });
 
@@ -111,9 +115,14 @@ const todayStats = [
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-400">{user?.name || "Volunteer"}</span>
             <div className="flex items-center gap-2">
-              <div className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-green-400 animate-pulse" : "bg-slate-500"}`} />
-              <span className="text-sm">{isOnline ? "Online" : "Offline"}</span>
-              <Switch checked={isOnline} onCheckedChange={setIsOnline} />
+              <div className="h-2.5 w-2.5 rounded-full bg-slate-500" />
+              <span className="text-sm">Availability not shared</span>
+              <Switch
+                checked={false}
+                disabled
+                aria-label="Availability requires trusted backend"
+                title="Partner availability requires a trusted backend."
+              />
             </div>
           </div>
         </div>
@@ -121,6 +130,11 @@ const todayStats = [
 
       <div className="container py-4 pb-24 space-y-4">
         <SparkUnavailableNotice operation="Advancing deliveries" />
+        {deliveryFeedError && (
+          <div role="alert" className="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">
+            Could not load delivery assignments: {deliveryFeedError}
+          </div>
+        )}
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
           {todayStats.map((s) => (
@@ -168,8 +182,10 @@ const todayStats = [
           active.length === 0 ? (
             <div className="bg-slate-800 rounded-xl p-8 text-center border border-slate-700">
               <Truck className="h-10 w-10 mx-auto text-slate-500 mb-2" />
-              <p className="text-slate-400">No active deliveries.</p>
-              <p className="text-slate-500 text-sm mt-1">New delivery claims and status updates require a trusted backend.</p>
+              <p className="text-slate-400">No active delivery assignments.</p>
+              <p className="text-slate-500 text-sm mt-1">
+                Live offers and partner availability require a trusted backend. This feed updates automatically when an authorized assignment is made.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -253,43 +269,36 @@ const todayStats = [
 
         {/* Live Map */}
         {tab === "map" && (
-          <div className="rounded-xl overflow-hidden border border-slate-700" style={{ height: "500px" }}>
-            <MapContainer center={currentLocation} zoom={14} style={{ height: "100%", width: "100%" }}>
+          <div className="space-y-3">
+            {locationError && (
+              <div role="alert" className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
+                {locationError}
+              </div>
+            )}
+            <p className="text-sm text-slate-400">
+              Pickup map pins are unavailable because delivery records do not contain pickup coordinates.
+            </p>
+            <div className="rounded-xl overflow-hidden border border-slate-700" style={{ height: "500px" }}>
+            <MapContainer center={currentLocation || [13.0827, 80.2707]} zoom={14} style={{ height: "100%", width: "100%" }}>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <RecenterMap center={currentLocation} />
-              <Marker position={currentLocation} icon={volunteerIcon}>
-                <Popup>
-                  <div className="text-center">
-                    <p className="font-semibold">📍 You are here</p>
-                    <p className="text-xs text-gray-500">{user?.name || "Volunteer"}</p>
-                  </div>
-                </Popup>
-              </Marker>
-              {active.map((d, i) => (
-                <Marker
-                  key={d.id}
-                  position={[
-                    currentLocation[0] + (Math.random() - 0.5) * 0.02,
-                    currentLocation[1] + (Math.random() - 0.5) * 0.02,
-                  ]}
-                  icon={pickupIcon}
-                >
+              {currentLocation && (
+                <>
+                  <RecenterMap center={currentLocation} />
+                  <Marker position={currentLocation} icon={volunteerIcon}>
                   <Popup>
-                    <div>
-                      <p className="font-semibold">📦 {d.foodDetails}</p>
-                      <p className="text-xs">{d.pickupAddress}</p>
-                      <p className="text-xs text-gray-500">{d.distanceKm} km away</p>
-                      <span className="text-xs bg-orange-100 text-orange-700 px-1 rounded">
-                        {statusLabels[d.status]}
-                      </span>
+                    <div className="text-center">
+                      <p className="font-semibold">📍 You are here</p>
+                      <p className="text-xs text-gray-500">{user?.name || "Volunteer"}</p>
                     </div>
                   </Popup>
-                </Marker>
-              ))}
+                  </Marker>
+                </>
+              )}
             </MapContainer>
+            </div>
           </div>
         )}
 

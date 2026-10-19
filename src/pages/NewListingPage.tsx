@@ -8,12 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, MapPin, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, MapPin, Check, LocateFixed } from "lucide-react";
 import { toast } from "sonner";
 import { createListing } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { getUserProfile } from "@/services/userService";
+import { getCurrentCoordinates, parseCoordinates } from "@/services/locationService";
 
 const dietaryOptions = ["Veg", "Vegan", "Halal", "Jain", "Contains Allergens"];
 const listingCategories: FoodListing["category"][] = [
@@ -32,6 +33,8 @@ type NewListingForm = {
   unit: FoodListing["unit"];
   dietaryTags: string[];
   address: string;
+  latitude: string;
+  longitude: string;
   pickupDate: string;
   pickupStart: string;
   pickupEnd: string;
@@ -50,6 +53,8 @@ export default function NewListingPage() {
     unit: "kg" as const,
     dietaryTags: [] as string[],
     address: "",
+    latitude: "",
+    longitude: "",
     pickupDate: "",
     pickupStart: "",
     pickupEnd: "",
@@ -78,24 +83,42 @@ const handleSubmit = async () => {
   if (posting) return;
   setPosting(true);
   try {
+    const location = parseCoordinates(form.latitude, form.longitude);
+    if (!form.address.trim()) {
+      throw new Error("Enter the pickup address.");
+    }
+    if (
+      !form.foodType.trim() ||
+      !Number.isFinite(Number(form.quantity)) ||
+      Number(form.quantity) <= 0
+    ) {
+      throw new Error("Enter a food name and a quantity greater than zero.");
+    }
+    if (!form.pickupDate || !form.pickupStart || !form.pickupEnd) {
+      throw new Error("Enter the pickup date and time window.");
+    }
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) {
       toast.error("You must be logged in.");
       return;
     }
     const profile = await getUserProfile(firebaseUser.uid);
+    if (!profile) {
+      throw new Error("Your donor profile could not be loaded. Please try again.");
+    }
+    const address = form.address.trim();
     await createListing({
       donorId: firebaseUser.uid,
-      donorName: profile?.orgName || profile?.name || "Anonymous Donor",
-      foodType: form.foodType,
+      donorName: profile.orgName || profile.name,
+      foodType: form.foodType.trim(),
       description: form.description,
       quantity: Number(form.quantity),
       unit: form.unit,
       category: form.category,
       pickupWindowStart: `${form.pickupDate}T${form.pickupStart}`,
       pickupWindowEnd: `${form.pickupDate}T${form.pickupEnd}`,
-      address: form.address,
-      location: { lat: 13.0827, lng: 80.2707, address: form.address },
+      address,
+      location: { ...location, address },
       photos: [],
       dietaryTags: form.dietaryTags,
       urgencyLevel: form.urgencyLevel,
@@ -104,12 +127,23 @@ const handleSubmit = async () => {
     toast.success("Listing posted successfully!");
     navigate("/donor/listings");
   } catch (e) {
-  console.error("FAILED TO POST FOOD:", e);
-  toast.error(
-    e instanceof Error ? e.message : "Failed to post listing."
-  );
-} finally {
-  setPosting(false);
+    console.error("FAILED TO POST FOOD:", e);
+    toast.error(
+      e instanceof Error ? e.message : "Failed to post listing."
+    );
+  } finally {
+    setPosting(false);
+  }
+};
+
+const useCurrentLocation = async () => {
+try {
+  const coordinates = await getCurrentCoordinates();
+  update("latitude", String(coordinates.lat));
+  update("longitude", String(coordinates.lng));
+  toast.success("Pickup coordinates added. Confirm they match the pickup point.");
+} catch (error) {
+  toast.error(error instanceof Error ? error.message : "Could not get your location.");
 }
 };
 
@@ -213,9 +247,47 @@ const handleSubmit = async () => {
                   <Label>Pickup Address</Label>
                   <div className="flex gap-2">
                     <Input className="flex-1" placeholder="Enter full pickup address" value={form.address} onChange={(e) => update("address", e.target.value)} />
-                    <Button variant="outline" size="icon" type="button"><MapPin className="h-4 w-4" /></Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      type="button"
+                      aria-label="Use my current location"
+                      onClick={useCurrentLocation}
+                    >
+                      <LocateFixed className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">Google Maps location picker — coming soon</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use your current location or enter the pickup point coordinates manually.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pickup-latitude">Latitude</Label>
+                      <Input
+                        id="pickup-latitude"
+                        type="number"
+                        min="-90"
+                        max="90"
+                        step="any"
+                        value={form.latitude}
+                        onChange={(event) => update("latitude", event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pickup-longitude">Longitude</Label>
+                      <Input
+                        id="pickup-longitude"
+                        type="number"
+                        min="-180"
+                        max="180"
+                        step="any"
+                        value={form.longitude}
+                        onChange={(event) => update("longitude", event.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Pickup Date</Label>
