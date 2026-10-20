@@ -20,6 +20,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  serverTimestamp,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
@@ -62,9 +63,34 @@ const listing = (donorId: string) => ({
   createdAt: "2026-10-18T08:00:00.000Z",
 });
 
+const listingAccessEvent = (collectorId: string, listingId: string) => ({
+  collectorId,
+  collectorName: "Test Collector",
+  listingId,
+  foodType: "Vegetables",
+  description: "Fresh surplus vegetables",
+  quantity: 10,
+  unit: "kg",
+  address: "Test address",
+  pickupWindowStart: "2026-10-18T10:00",
+  pickupWindowEnd: "2026-10-18T12:00",
+  createdAt: serverTimestamp(),
+});
+
 async function seedUser(uid: string) {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), "users", uid), userProfile(uid));
+  });
+}
+
+async function seedListingAndCollector(collectorId: string, listingId: string) {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "users", collectorId), {
+      ...userProfile(collectorId),
+      name: "Test Collector",
+      role: "collector",
+    });
+    await setDoc(doc(context.firestore(), "listings", listingId), listing("listing-donor"));
   });
 }
 
@@ -308,6 +334,97 @@ describe("Firestore security rules", () => {
 
     await assertSucceeds(
       addDoc(collection(donorDb, "listings"), listing(donorId))
+    );
+  });
+
+  it("allows a collector to record one valid listing access event for volunteers", async () => {
+    const collectorId = "event-collector";
+    const listingId = "event-listing";
+    await seedListingAndCollector(collectorId, listingId);
+    const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
+
+    await assertSucceeds(
+      setDoc(
+        doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`),
+        listingAccessEvent(collectorId, listingId)
+      )
+    );
+
+    const volunteerId = "event-volunteer";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", volunteerId), {
+        ...userProfile(volunteerId),
+        role: "volunteer",
+      });
+    });
+    const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
+    await assertSucceeds(
+      getDoc(doc(volunteerDb, "listingAccessEvents", `${listingId}_${collectorId}`))
+    );
+    await assertSucceeds(getDocs(collection(volunteerDb, "listingAccessEvents")));
+  });
+
+  it("denies forged, duplicate, and non-collector listing access events", async () => {
+    const collectorId = "event-owner";
+    const listingId = "event-listed-food";
+    await seedListingAndCollector(collectorId, listingId);
+    const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
+    const eventRef = doc(
+      collectorDb,
+      "listingAccessEvents",
+      `${listingId}_${collectorId}`
+    );
+
+    await assertFails(
+      setDoc(eventRef, {
+        ...listingAccessEvent(collectorId, listingId),
+        address: "Forged pickup address",
+      })
+    );
+    await assertSucceeds(setDoc(eventRef, listingAccessEvent(collectorId, listingId)));
+    await assertFails(setDoc(eventRef, listingAccessEvent(collectorId, listingId)));
+
+    await seedUser("event-donor");
+    const donorDb = testEnvironment.authenticatedContext("event-donor").firestore();
+    await assertFails(
+      setDoc(
+        doc(donorDb, "listingAccessEvents", `${listingId}_event-donor`),
+        listingAccessEvent("event-donor", listingId)
+      )
+    );
+  });
+
+  it("denies volunteers from creating listing access events and donors from reading them", async () => {
+    const collectorId = "event-read-collector";
+    const listingId = "event-read-listing";
+    await seedListingAndCollector(collectorId, listingId);
+    const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`),
+        listingAccessEvent(collectorId, listingId)
+      )
+    );
+
+    const volunteerId = "event-read-volunteer";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", volunteerId), {
+        ...userProfile(volunteerId),
+        role: "volunteer",
+      });
+    });
+    const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
+    await assertFails(
+      setDoc(
+        doc(volunteerDb, "listingAccessEvents", `${listingId}_${volunteerId}`),
+        listingAccessEvent(volunteerId, listingId)
+      )
+    );
+
+    await seedUser("event-read-donor");
+    const donorDb = testEnvironment.authenticatedContext("event-read-donor").firestore();
+    await assertFails(
+      getDocs(collection(donorDb, "listingAccessEvents"))
     );
   });
 });

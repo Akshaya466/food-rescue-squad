@@ -236,6 +236,49 @@ service cloud.firestore {
           .hasOnly(['isRead']);
     }
 
+    match /listingAccessEvents/{eventId} {
+      allow get, list: if hasRole('volunteer');
+
+      allow create: if hasRole('collector')
+        && eventId == request.resource.data.listingId + '_' + request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'collectorId', 'collectorName', 'listingId', 'foodType',
+          'description', 'quantity', 'unit', 'address',
+          'pickupWindowStart', 'pickupWindowEnd', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'collectorId', 'collectorName', 'listingId', 'foodType',
+          'description', 'quantity', 'unit', 'address',
+          'pickupWindowStart', 'pickupWindowEnd', 'createdAt'
+        ])
+        && request.resource.data.collectorId == request.auth.uid
+        && request.resource.data.collectorName
+          == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
+        && request.resource.data.listingId is string
+        && request.resource.data.listingId.size() > 0
+        && request.resource.data.listingId.size() <= 128
+        && request.resource.data.createdAt == request.time
+        && exists(/databases/$(database)/documents/listings/$(request.resource.data.listingId))
+        && get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.status == 'active'
+        && get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.claimedBy == null
+        && request.resource.data.foodType
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.foodType
+        && request.resource.data.description
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.description
+        && request.resource.data.quantity
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.quantity
+        && request.resource.data.unit
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.unit
+        && request.resource.data.address
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.address
+        && request.resource.data.pickupWindowStart
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.pickupWindowStart
+        && request.resource.data.pickupWindowEnd
+          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.pickupWindowEnd;
+
+      allow update, delete: if false;
+    }
+
     match /ratings/{ratingId} {
       allow get, list: if signedIn()
         && resource.data.toUserId == request.auth.uid;

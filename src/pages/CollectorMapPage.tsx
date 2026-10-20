@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Package } from "lucide-react";
-import { getAllListings } from "@/services/foodService";
+import { Package } from "lucide-react";
+import { subscribeToListings } from "@/services/foodService";
 import { FoodListing, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
-import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
+import { recordListingAccess } from "@/services/listingAccessService";
+import { toast } from "sonner";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,25 +45,78 @@ function getMarkerIcon(listing: FoodListing) {
 
 export default function CollectorMapPage() {
   const [listings, setListings] = useState<FoodListing[]>([]);
-  const [user, setUser] = useState<User | null>(null);
+  const [collector, setCollector] = useState<User | null>(null);
+  const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
-  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-    if (firebaseUser) {
-      const profile = await getUserProfile(firebaseUser.uid);
-      setUser(profile);
-      getAllListings().then((data) =>
-        setListings(data.filter((l) => l.status === "active"))
-      );
+    let unsubscribeListings: (() => void) | null = null;
+    let authGeneration = 0;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      const generation = ++authGeneration;
+      unsubscribeListings?.();
+      unsubscribeListings = null;
+      if (!firebaseUser) {
+        setCollector(null);
+        setListings([]);
+        return;
+      }
+      try {
+        const profile = await getUserProfile(firebaseUser.uid);
+        if (generation !== authGeneration) return;
+        setCollector(profile);
+        if (!profile || profile.role !== "collector") {
+          setListings([]);
+          return;
+        }
+        setListingError(null);
+        unsubscribeListings = subscribeToListings(
+          (data) => {
+            if (generation !== authGeneration) return;
+            setListings(data.filter(
+              (listing) => listing.status === "active" && !listing.claimedBy
+            ));
+          },
+          (error) => {
+            if (generation === authGeneration) setListingError(error.message);
+          }
+        );
+      } catch (error: unknown) {
+        if (generation !== authGeneration) return;
+        console.error("Could not load collector map profile:", error);
+        setListingError(
+          error instanceof Error ? error.message : "Could not load available food."
+        );
+      }
+    });
+    return () => {
+      authGeneration += 1;
+      unsubscribeAuth();
+      unsubscribeListings?.();
+    };
+  }, []);
+
+  const notifyVolunteersOfAccess = async (listing: FoodListing) => {
+    if (!collector || collector.role !== "collector") {
+      toast.error("Could not notify delivery volunteers: collector profile is unavailable.");
+      return;
     }
-  });
-  return () => unsubscribeAuth();
-}, []);
+    try {
+      await recordListingAccess(listing, collector);
+    } catch (error: unknown) {
+      console.error("Could not record collector listing access:", error);
+      toast.error("Could not notify delivery volunteers about this food.");
+    }
+  };
 
   return (
     <DashboardLayout role="collector">
       <div className="space-y-4">
-        <SparkUnavailableNotice operation="Claiming food" />
+        {listingError && (
+          <Alert variant="destructive">
+            <AlertTitle>Could not load available food</AlertTitle>
+            <AlertDescription>{listingError}</AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Live Map</h1>
@@ -98,6 +151,7 @@ export default function CollectorMapPage() {
                     l.location.lng + (Math.random() - 0.5) * 0.02,
                   ]}
                   icon={getMarkerIcon(l)}
+                  eventHandlers={{ popupopen: () => void notifyVolunteersOfAccess(l) }}
                 >
                   <Popup>
                     <div className="space-y-2 min-w-[200px]">
@@ -112,13 +166,6 @@ export default function CollectorMapPage() {
                         ⏰ Until {new Date(l.pickupWindowEnd).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                       </p>
                       {l.description && <p className="text-xs">{l.description}</p>}
-                      <button
-                        className="w-full bg-green-600 text-white text-sm py-2 rounded font-semibold opacity-50 cursor-not-allowed"
-                        disabled
-                        title="Claiming requires a trusted Cloud Functions backend."
-                      >
-                        Claim unavailable
-                      </button>
                     </div>
                   </Popup>
                 </Marker>

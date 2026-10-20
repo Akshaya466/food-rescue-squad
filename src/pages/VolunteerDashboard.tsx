@@ -13,6 +13,10 @@ import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
 import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 import { getCurrentCoordinates } from "@/services/locationService";
+import {
+  ListingAccessEvent,
+  subscribeToListingAccessEvents,
+} from "@/services/listingAccessService";
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -55,43 +59,87 @@ export default function VolunteerDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [listingAccessEvents, setListingAccessEvents] = useState<ListingAccessEvent[]>([]);
+  const [listingAccessError, setListingAccessError] = useState<string | null>(null);
 
   useEffect(() => {
   let unsubActive: (() => void) | null = null;
   let unsubHistory: (() => void) | null = null;
+  let unsubListingAccess: (() => void) | null = null;
+  let authGeneration = 0;
 
   const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    const generation = ++authGeneration;
     if (unsubActive) { unsubActive(); unsubActive = null; }
     if (unsubHistory) { unsubHistory(); unsubHistory = null; }
+    if (unsubListingAccess) { unsubListingAccess(); unsubListingAccess = null; }
 
-    if (firebaseUser) {
+    if (!firebaseUser) {
+      setUser(null);
+      setActive([]);
+      setHistory([]);
+      setListingAccessEvents([]);
+      return;
+    }
+
+    try {
       const profile = await getUserProfile(firebaseUser.uid);
+      if (generation !== authGeneration) return;
       setUser(profile);
+      if (!profile || profile.role !== "volunteer") {
+        setListingAccessEvents([]);
+        return;
+      }
 
       unsubActive = subscribeToUnassignedDeliveries(
         (deliveries) => {
+          if (generation !== authGeneration) return;
           setActive(deliveries);
           setDeliveryFeedError(null);
         },
-        (error) => setDeliveryFeedError(error.message)
+        (error) => {
+          if (generation === authGeneration) setDeliveryFeedError(error.message);
+        }
       );
-      unsubHistory = subscribeToDeliveryHistory(firebaseUser.uid, setHistory);
+      unsubHistory = subscribeToDeliveryHistory(firebaseUser.uid, (deliveries) => {
+        if (generation === authGeneration) setHistory(deliveries);
+      });
+      setListingAccessError(null);
+      unsubListingAccess = subscribeToListingAccessEvents(
+        (events) => {
+          if (generation === authGeneration) setListingAccessEvents(events);
+        },
+        (error) => {
+          if (generation === authGeneration) setListingAccessError(error.message);
+        }
+      );
 
       getCurrentCoordinates()
-        .then(({ lat, lng }) => setCurrentLocation([lat, lng]))
+        .then(({ lat, lng }) => {
+          if (generation === authGeneration) setCurrentLocation([lat, lng]);
+        })
         .catch((error: unknown) => {
+          if (generation !== authGeneration) return;
           setCurrentLocation(null);
           setLocationError(
             error instanceof Error ? error.message : "Could not get your location."
           );
         });
+    } catch (error: unknown) {
+      if (generation !== authGeneration) return;
+      console.error("Could not load volunteer profile:", error);
+      setListingAccessError(
+        error instanceof Error ? error.message : "Could not load volunteer access alerts."
+      );
     }
   });
 
   return () => {
+    authGeneration += 1;
     unsubAuth();
     if (unsubActive) unsubActive();
     if (unsubHistory) unsubHistory();
+    if (unsubListingAccess) unsubListingAccess();
   };
 }, []);
   const totalKgRescued = history.reduce((sum, d) => sum + (d.distanceKm || 0), 0).toFixed(1);
@@ -130,6 +178,35 @@ const todayStats = [
 
       <div className="container py-4 pb-24 space-y-4">
         <SparkUnavailableNotice operation="Advancing deliveries" />
+        {listingAccessError && (
+          <div role="alert" className="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">
+            Could not load collector food access alerts: {listingAccessError}
+          </div>
+        )}
+        {listingAccessEvents.length > 0 && (
+          <section
+            aria-live="polite"
+            aria-label="Food opened by collectors"
+            className="space-y-2 rounded-xl border border-green-500/30 bg-green-500/10 p-4"
+          >
+            <h2 className="font-semibold text-green-300">Food opened by collectors</h2>
+            {listingAccessEvents.map((event) => (
+              <article key={event.id} className="rounded-lg bg-slate-800 p-3 text-sm">
+                <p>
+                  <span className="font-semibold">{event.collectorName}</span>
+                  {" opened "}
+                  <span className="font-semibold">{event.foodType}</span>
+                  {" ("}{event.quantity} {event.unit}{")"}
+                </p>
+                <p className="text-xs text-slate-400">Listing reference: {event.listingId}</p>
+                <p className="mt-1 text-slate-300">Pickup: {event.address}</p>
+                <p className="text-xs text-slate-400">
+                  {event.pickupWindowStart} – {event.pickupWindowEnd}
+                </p>
+              </article>
+            ))}
+          </section>
+        )}
         {deliveryFeedError && (
           <div role="alert" className="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">
             Could not load delivery assignments: {deliveryFeedError}

@@ -9,13 +9,14 @@ import { StatusBadge, UrgencyDot, CategoryBadge } from "@/components/FoodBadges"
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map, X } from "lucide-react";
+import { MapPin, Clock, Package, Weight, Star, Search, LayoutGrid, Map } from "lucide-react";
 import { FoodListing, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
-import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { recordListingAccess } from "@/services/listingAccessService";
+import { toast } from "sonner";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -81,37 +82,57 @@ export default function CollectorDashboard() {
 
   useEffect(() => {
     let unsubscribeListings: (() => void) | null = null;
+    let authGeneration = 0;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      const generation = ++authGeneration;
       if (unsubscribeListings) {
         unsubscribeListings();
         unsubscribeListings = null;
       }
 
-      if (firebaseUser) {
-        setCurrentUid(firebaseUser.uid);
-        const profile = await getUserProfile(firebaseUser.uid);
-        setUser(profile);
+      setAllData([]);
+      setListingError(null);
+      setCurrentUid(firebaseUser?.uid ?? null);
+      if (!firebaseUser) {
+        setUser(null);
+        return;
+      }
 
-        setListingError(null);
+      try {
+        const profile = await getUserProfile(firebaseUser.uid);
+        if (generation !== authGeneration) return;
+        setUser(profile);
+        if (!profile || profile.role !== "collector") return;
+
         unsubscribeListings = subscribeToListings((data) => {
-          // Deduplicate by id
+          if (generation !== authGeneration) return;
           const unique = data.filter(
-  (l, index, self) => index === self.findIndex((t) => t.id === l.id)
-);
-setAllData(unique);
-        }, (error) => setListingError(error.message));
+            (listing, index, allListings) =>
+              index === allListings.findIndex((candidate) => candidate.id === listing.id)
+          );
+          setAllData(unique);
+        }, (error) => {
+          if (generation === authGeneration) setListingError(error.message);
+        });
+      } catch (error: unknown) {
+        if (generation !== authGeneration) return;
+        console.error("Could not load collector dashboard profile:", error);
+        setListingError(
+          error instanceof Error ? error.message : "Could not load available food."
+        );
       }
     });
 
     return () => {
+      authGeneration += 1;
       unsubscribeAuth();
       if (unsubscribeListings) unsubscribeListings();
     };
   }, []);
 
   // Derive active and claimed from single source of truth
-  const listings = allData.filter((l) => l.status === "active");
+  const listings = allData.filter((l) => l.status === "active" && !l.claimedBy);
   const claimedListings = allData.filter((l) => l.claimedBy === currentUid);
 
   const filteredListings = listings.filter(l => {
@@ -119,6 +140,24 @@ setAllData(unique);
     if (filters.urgency !== "all" && l.urgencyLevel !== filters.urgency) return false;
     return true;
   });
+
+  const recordCollectorAccess = async (listing: FoodListing) => {
+    if (!user || user.role !== "collector") {
+      toast.error("Could not notify delivery volunteers: collector profile is unavailable.");
+      return;
+    }
+    try {
+      await recordListingAccess(listing, user);
+    } catch (error: unknown) {
+      console.error("Could not record collector listing access:", error);
+      toast.error("Could not notify delivery volunteers about this food.");
+    }
+  };
+
+  const openListingDetails = (listing: FoodListing) => {
+    setViewTarget(listing);
+    void recordCollectorAccess(listing);
+  };
 
   const totalKgClaimed = claimedListings.reduce(
     (sum, l) => sum + (l.unit === "kg" ? l.quantity : 0), 0
@@ -135,7 +174,6 @@ setAllData(unique);
     <DashboardLayout role="collector">
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Available Food Nearby</h1>
-        <SparkUnavailableNotice operation="Claiming and unclaiming food" />
         {listingError && (
           <Alert variant="destructive">
             <AlertTitle>Could not load available food</AlertTitle>
@@ -236,12 +274,9 @@ setAllData(unique);
                             <MapPin className="h-3 w-3" /> {l.address.split(",")[0]}
                           </span>
                         </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" className="flex-1" onClick={() => setViewTarget(l)}>
+                        <div className="flex">
+                          <Button variant="outline" size="sm" className="w-full" onClick={() => void openListingDetails(l)}>
                             Details
-                          </Button>
-                          <Button className="flex-1" size="sm" disabled title="Claiming requires a trusted Cloud Functions backend.">
-                            Claim unavailable
                           </Button>
                         </div>
                       </div>
@@ -265,15 +300,6 @@ setAllData(unique);
                         </p>
                       </div>
                       <StatusBadge status={l.status} />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive border-destructive/30"
-                        disabled
-                        title="Unclaiming requires a trusted Cloud Functions backend."
-                      >
-                        <X className="h-3 w-3 mr-1" /> Unclaim unavailable
-                      </Button>
                     </CardContent>
                   </Card>
                 ))}
@@ -295,6 +321,7 @@ setAllData(unique);
                   key={l.id}
                   position={[l.location.lat, l.location.lng]}
                   icon={getMarkerIcon(l)}
+                  eventHandlers={{ popupopen: () => void recordCollectorAccess(l) }}
                 >
                   <Popup>
                     <div className="space-y-2 min-w-[180px]">
@@ -302,13 +329,6 @@ setAllData(unique);
                       <p className="text-xs text-gray-500">{l.donorName}</p>
                       <p className="text-xs">{l.quantity} {l.unit} · {l.category}</p>
                       <p className="text-xs text-gray-500">{l.address}</p>
-                      <button
-                        className="w-full bg-green-600 text-white text-xs py-1.5 rounded font-semibold opacity-50 cursor-not-allowed"
-                        disabled
-                        title="Claiming requires a trusted Cloud Functions backend."
-                      >
-                        Claim unavailable
-                      </button>
                     </div>
                   </Popup>
                 </Marker>
@@ -344,9 +364,6 @@ setAllData(unique);
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
-              <Button disabled title="Claiming requires a trusted Cloud Functions backend.">
-                Claim unavailable
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

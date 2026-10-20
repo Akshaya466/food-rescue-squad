@@ -6,16 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Star, CheckCircle, Award, Package, Heart, Shield, Pencil } from "lucide-react";
-import { getUserProfile, getUserRatings, updateUserProfile } from "@/services/userService";
+import { getUserProfile, updateUserProfile } from "@/services/userService";
 import { useState, useEffect } from "react";
-import { Rating, User } from "@/types";
+import { User } from "@/types";
 import { toast } from "sonner";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 
 export default function ProfilePage() {
-  const [ratings, setRatings] = useState<Rating[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", phone: "", orgName: "", address: "" });
@@ -33,7 +31,6 @@ export default function ProfilePage() {
           orgName: profile.orgName || "",
           address: profile.location?.address || "",
         });
-        getUserRatings(firebaseUser.uid).then(setRatings).catch(() => setRatings([]));
       }
     }
   });
@@ -102,7 +99,6 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-warning text-warning" />
                     <span className="font-semibold">{user?.trustScore ?? "—"}</span>
-                    <span className="text-muted-foreground text-sm">({ratings.length} ratings)</span>
                   </div>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Package className="h-4 w-4" /> {user?.totalRescues ?? 0} rescues
@@ -128,45 +124,6 @@ export default function ProfilePage() {
                 <span className="text-sm font-medium">{b.label}</span>
               </div>
             ))}
-          </CardContent>
-        </Card>
-
-        {/* Reviews */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Reviews ({ratings.length})</CardTitle>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled
-              title="Rating opportunities and submissions require a trusted Cloud Functions backend."
-            >
-              Rating unavailable
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SparkUnavailableNotice operation="Loading rating opportunities and submitting ratings" />
-            {ratings.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No reviews yet.
-              </p>
-            ) : (
-              ratings.map((r) => (
-                <div key={r.id} className="border-b last:border-0 pb-4 last:pb-0">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-0.5">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star key={i} className={`h-3.5 w-3.5 ${i < r.score ? "fill-warning text-warning" : "text-muted"}`} />
-                      ))}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(r.createdAt).toLocaleDateString("en-IN")}
-                    </span>
-                  </div>
-                  {r.review && <p className="text-sm mt-1">{r.review}</p>}
-                </div>
-              ))
-            )}
           </CardContent>
         </Card>
 
