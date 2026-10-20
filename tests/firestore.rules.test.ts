@@ -349,6 +349,9 @@ describe("Firestore security rules", () => {
         listingAccessEvent(collectorId, listingId)
       )
     );
+    await assertSucceeds(
+      getDoc(doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`))
+    );
 
     const volunteerId = "event-volunteer";
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
@@ -358,6 +361,14 @@ describe("Firestore security rules", () => {
       });
     });
     const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
+    const secondCollectorId = "event-other-collector";
+    await seedListingAndCollector(secondCollectorId, listingId);
+    const secondCollectorDb = testEnvironment
+      .authenticatedContext(secondCollectorId)
+      .firestore();
+    await assertFails(
+      getDoc(doc(secondCollectorDb, "listingAccessEvents", `${listingId}_${collectorId}`))
+    );
     await assertSucceeds(
       getDoc(doc(volunteerDb, "listingAccessEvents", `${listingId}_${collectorId}`))
     );

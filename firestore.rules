@@ -237,7 +237,12 @@ service cloud.firestore {
     }
 
     match /listingAccessEvents/{eventId} {
-      allow get, list: if hasRole('volunteer');
+      allow get: if hasRole('volunteer')
+        || (
+          hasRole('collector')
+          && resource.data.collectorId == request.auth.uid
+        );
+      allow list: if hasRole('volunteer');
 
       allow create: if hasRole('collector')
         && eventId == request.resource.data.listingId + '_' + request.auth.uid

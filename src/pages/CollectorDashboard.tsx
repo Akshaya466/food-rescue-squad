@@ -275,8 +275,8 @@ export default function CollectorDashboard() {
                           </span>
                         </div>
                         <div className="flex">
-                          <Button variant="outline" size="sm" className="w-full" onClick={() => void openListingDetails(l)}>
-                            Details
+                          <Button variant="outline" size="sm" className="w-full" onClick={() => openListingDetails(l)}>
+                            View food & pickup
                           </Button>
                         </div>
                       </div>
