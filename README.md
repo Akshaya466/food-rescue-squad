@@ -33,8 +33,9 @@ updates the listing in the same transaction. No Cloud Function is required for
 these workflows. Role administration, verification changes, and rating operations
 remain trusted-backend-only; users cannot change their own verification status.
 
-Collector accounts are active immediately after registration. Volunteer role
-selections remain requests until an administrator approves them. Admin accounts
+Donor, collector, and delivery-volunteer accounts are created with the role
+explicitly selected during sign-up. Collectors can immediately read available
+listings; volunteers can access delivery tasks and claim alerts. Admin accounts
 must be provisioned from a trusted environment with Application Default Credentials:
 
 ```powershell

@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerUser } from "./authService";
+import {
+  createProfileForAuthenticatedUser,
+  registerUser,
+  signInWithGoogle,
+} from "./authService";
 import { getDashboardRoute, getEffectiveRole } from "./roleRouting";
-import { resolveActiveUserProfile, selectUserRole } from "./userService";
+import {
+  completeUserRoleSelection,
+  resolveActiveUserProfile,
+} from "./userService";
 
 const authMocks = vi.hoisted(() => ({
   createUserWithEmailAndPassword: vi.fn(),
+  signInWithPopup: vi.fn(),
+  GoogleAuthProvider: vi.fn(),
 }));
 
 const firestoreMocks = vi.hoisted(() => ({
@@ -20,8 +29,8 @@ vi.mock("firebase/auth", () => ({
   signInWithEmailAndPassword: vi.fn(),
   signOut: vi.fn(),
   onAuthStateChanged: vi.fn(),
-  GoogleAuthProvider: vi.fn(),
-  signInWithPopup: vi.fn(),
+  GoogleAuthProvider: authMocks.GoogleAuthProvider,
+  signInWithPopup: authMocks.signInWithPopup,
 }));
 
 vi.mock("firebase/firestore", () => ({
@@ -89,7 +98,7 @@ describe("collector and donor registration flow", () => {
     expect(getDashboardRoute(user.role)).toBe("/donor/dashboard");
   });
 
-  it("keeps volunteer registration as a pending donor request", async () => {
+  it("registers delivery volunteers with the active volunteer role", async () => {
     authMocks.createUserWithEmailAndPassword.mockResolvedValue({
       user: { uid: "volunteer-1" },
     });
@@ -103,25 +112,19 @@ describe("collector and donor registration flow", () => {
       city: "Chennai",
     });
 
-    expect(user.role).toBe("donor");
-    expect(user.requestedRole).toBe("volunteer");
-    expect(getDashboardRoute(getEffectiveRole(user))).toBe("/donor/dashboard");
+    expect(user.role).toBe("volunteer");
+    expect(user.requestedRole).toBeUndefined();
+    expect(getDashboardRoute(getEffectiveRole(user))).toBe("/volunteer/dashboard");
   });
 });
 
 describe("role routing", () => {
-  it("does not treat volunteer requests as active volunteer roles", () => {
+  it("routes by the persisted role rather than inferring from role requests", () => {
     expect(getEffectiveRole({ role: "donor", requestedRole: "volunteer" })).toBe("donor");
     expect(getDashboardRoute(getEffectiveRole({ role: "donor", requestedRole: "volunteer" }))).toBe(
       "/donor/dashboard"
     );
-  });
-
-  it("routes existing collector applicants with a donor role mismatch to the collector dashboard", () => {
-    expect(getEffectiveRole({ role: "donor", requestedRole: "collector" })).toBe("collector");
-    expect(getDashboardRoute(getEffectiveRole({ role: "donor", requestedRole: "collector" }))).toBe(
-      "/collector/dashboard"
-    );
+    expect(getEffectiveRole({ role: "donor", requestedRole: "collector" })).toBe("donor");
   });
 
   it("keeps donor and volunteer routing unchanged", () => {
@@ -131,92 +134,112 @@ describe("role routing", () => {
     expect(getDashboardRoute("volunteer")).toBe("/volunteer/dashboard");
     expect(getDashboardRoute("admin")).toBe("/admin/dashboard");
   });
+
+  it("returns no active role for a missing or invalid role", () => {
+    expect(getEffectiveRole(null)).toBeNull();
+    expect(getEffectiveRole({ role: undefined as never })).toBeNull();
+  });
 });
 
-describe("Google role onboarding", () => {
+describe("role completion and sign-in", () => {
   const snapshot = (profile: Record<string, unknown>) => ({
     exists: () => true,
     id: "google-user",
     data: () => profile,
   });
 
-  describe("existing collector applicant sign-in", () => {
-    it("persists the collector role before resolving the profile as active", async () => {
-      firestoreMocks.doc.mockReturnValue("legacy-profile");
-      firestoreMocks.getDoc
-        .mockResolvedValueOnce({
-          exists: () => true,
-          id: "legacy-user",
-          data: () => ({ role: "donor", requestedRole: "collector" }),
-        })
-        .mockResolvedValueOnce({
-          exists: () => true,
-          id: "legacy-user",
-          data: () => ({ role: "donor", requestedRole: "collector" }),
-        })
-        .mockResolvedValueOnce({
-          exists: () => true,
-          id: "legacy-user",
-          data: () => ({ role: "collector" }),
-        });
+  it("does not change an existing collector applicant's role during sign-in", async () => {
+    firestoreMocks.doc.mockReturnValue("legacy-profile");
+    firestoreMocks.getDoc.mockResolvedValueOnce(
+      snapshot({ role: "donor", requestedRole: "collector" })
+    );
 
-      const profile = await resolveActiveUserProfile("legacy-user");
+    const profile = await resolveActiveUserProfile("legacy-user");
 
-      expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
-        "legacy-profile",
-        { role: "collector", requestedRole: "delete-field" }
-      );
-      expect(profile?.role).toBe("collector");
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+    expect(profile?.role).toBe("donor");
+  });
+
+  it("lets a roleless profile select a role without overwriting its other data", async () => {
+    firestoreMocks.doc.mockReturnValue("google-profile");
+    firestoreMocks.getDoc
+      .mockResolvedValueOnce(snapshot({ name: "Google User" }))
+      .mockResolvedValueOnce(snapshot({ role: "volunteer", name: "Google User" }));
+
+    const profile = await completeUserRoleSelection("google-user", "volunteer");
+
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledOnce();
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith("google-profile", {
+      role: "volunteer",
+      requestedRole: "delete-field",
     });
+    expect(profile.role).toBe("volunteer");
   });
 
-  it("persists collector activation before returning from Google onboarding", async () => {
+  it("refuses to replace an existing valid role during role completion", async () => {
     firestoreMocks.doc.mockReturnValue("google-profile");
-    firestoreMocks.getDoc
-      .mockResolvedValueOnce(snapshot({ role: "donor", requestedRole: "volunteer" }))
-      .mockResolvedValueOnce(snapshot({ role: "collector" }));
+    firestoreMocks.getDoc.mockResolvedValueOnce(snapshot({ role: "donor" }));
 
-    const profile = await selectUserRole("google-user", "collector");
-
-    expect(firestoreMocks.updateDoc).toHaveBeenNthCalledWith(
-      1,
-      "google-profile",
-      { requestedRole: "collector" }
-    );
-    expect(firestoreMocks.updateDoc).toHaveBeenNthCalledWith(
-      2,
-      "google-profile",
-      { role: "collector", requestedRole: "delete-field" }
-    );
-    expect(profile.role).toBe("collector");
+    await expect(
+      completeUserRoleSelection("google-user", "collector")
+    ).rejects.toThrow("This account already has a valid role.");
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
   });
 
-  it("leaves Google volunteer selections pending as donors", async () => {
+  it("reads existing Google profiles without creating or changing their role", async () => {
+    const firebaseUser = {
+      uid: "google-user",
+      displayName: "Google User",
+      email: "google@example.com",
+    };
+    authMocks.signInWithPopup.mockResolvedValueOnce({ user: firebaseUser });
     firestoreMocks.doc.mockReturnValue("google-profile");
-    firestoreMocks.getDoc
-      .mockResolvedValueOnce(snapshot({ role: "donor" }))
-      .mockResolvedValueOnce(snapshot({ role: "donor", requestedRole: "volunteer" }));
-
-    const profile = await selectUserRole("google-user", "volunteer");
-
-    expect(firestoreMocks.updateDoc).toHaveBeenCalledOnce();
-    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
-      "google-profile",
-      { requestedRole: "volunteer" }
+    firestoreMocks.getDoc.mockResolvedValueOnce(
+      snapshot({ role: "donor", name: "Google User" })
     );
-    expect(profile.role).toBe("donor");
-    expect(getEffectiveRole(profile)).toBe("donor");
+
+    const result = await signInWithGoogle();
+
+    expect(result.profile?.role).toBe("donor");
+    expect(firestoreMocks.setDoc).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
   });
 
-  it("promotes an existing donor collector applicant and confirms the stored role", async () => {
+  it("creates a Google profile with the selected role when no profile exists", async () => {
+    const firebaseUser = {
+      uid: "google-new-volunteer",
+      displayName: "New Volunteer",
+      email: "volunteer@example.com",
+    };
+    authMocks.signInWithPopup.mockResolvedValueOnce({ user: firebaseUser });
+    firestoreMocks.doc.mockReturnValue("google-profile");
+    firestoreMocks.getDoc.mockResolvedValueOnce({
+      exists: () => false,
+    });
+    const result = await signInWithGoogle();
+
+    expect(result.profile).toBeNull();
+    const profile = await createProfileForAuthenticatedUser(
+      firebaseUser as never,
+      "volunteer"
+    );
+    expect(profile.role).toBe("volunteer");
+    expect(firestoreMocks.setDoc).toHaveBeenCalledWith(
+      "google-profile",
+      expect.objectContaining({ role: "volunteer" })
+    );
+  });
+
+  it("does not promote an existing donor collector applicant during role selection", async () => {
     firestoreMocks.doc.mockReturnValue("collector-profile");
-    firestoreMocks.getDoc
-      .mockResolvedValueOnce(snapshot({ role: "donor", requestedRole: "collector" }))
-      .mockResolvedValueOnce(snapshot({ role: "collector" }));
+    firestoreMocks.getDoc.mockResolvedValueOnce(
+      snapshot({ role: "donor", requestedRole: "collector" })
+    );
 
-    const profile = await selectUserRole("google-user", "collector");
+    await expect(
+      completeUserRoleSelection("google-user", "collector")
+    ).rejects.toThrow("This account already has a valid role.");
 
-    expect(firestoreMocks.updateDoc).toHaveBeenCalledOnce();
-    expect(profile.role).toBe("collector");
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
   });
 });

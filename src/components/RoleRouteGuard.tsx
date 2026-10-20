@@ -4,7 +4,7 @@ import { Navigate } from "react-router-dom";
 import { auth } from "@/config/firebase";
 import { User } from "@/types";
 import { resolveActiveUserProfile } from "@/services/userService";
-import { getDashboardRoute } from "@/services/roleRouting";
+import { getDashboardRoute, getEffectiveRole } from "@/services/roleRouting";
 
 type RouteRole = User["role"] | "dashboard" | "authenticated";
 type GuardState =
@@ -31,27 +31,28 @@ export function RoleRouteGuard({ role, children }: RoleRouteGuardProps) {
       void (async () => {
         try {
           const profile = await resolveActiveUserProfile(firebaseUser.uid);
-          if (!profile) {
+          const activeRole = getEffectiveRole(profile);
+          if (!profile || !activeRole) {
             if (active) setState({ status: "redirect", path: "/login" });
             return;
           }
 
           const needsAdminClaim =
             role === "admin" ||
-            (role === "dashboard" && profile.role === "admin");
+            (role === "dashboard" && activeRole === "admin");
           const hasAdminClaim = needsAdminClaim
             ? (await getIdTokenResult(firebaseUser)).claims.admin === true
             : false;
 
           if (role === "dashboard") {
-            if (profile.role === "admin" && !hasAdminClaim) {
+            if (activeRole === "admin" && !hasAdminClaim) {
               if (active) setState({ status: "redirect", path: "/login" });
               return;
             }
             if (active) {
               setState({
                 status: "redirect",
-                path: getDashboardRoute(profile.role),
+                path: getDashboardRoute(activeRole),
               });
             }
             return;
@@ -64,20 +65,20 @@ export function RoleRouteGuard({ role, children }: RoleRouteGuardProps) {
 
           if (
             role === "admin" &&
-            (profile.role !== "admin" || !hasAdminClaim)
+            (activeRole !== "admin" || !hasAdminClaim)
           ) {
             if (active) setState({ status: "redirect", path: "/login" });
             return;
           }
 
-          if (profile.role !== role) {
+          if (activeRole !== role) {
             if (active) {
               setState({
                 status: "redirect",
                 path:
-                  profile.role === "admin" && !hasAdminClaim
+                  activeRole === "admin" && !hasAdminClaim
                     ? "/login"
-                    : getDashboardRoute(profile.role),
+                    : getDashboardRoute(activeRole),
               });
             }
             return;

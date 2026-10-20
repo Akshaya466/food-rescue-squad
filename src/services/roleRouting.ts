@@ -2,18 +2,11 @@ import { User } from "@/types";
 
 export function getEffectiveRole(
   user?: Pick<User, "role" | "requestedRole"> | null
-): User["role"] {
-  if (!user) return "donor";
-
-  if (user.role !== "donor") {
-    return user.role;
-  }
-
-  if (user.requestedRole === "collector") {
-    return "collector";
-  }
-
-  return "donor";
+): User["role"] | null {
+  if (!user) return null;
+  return ["donor", "collector", "volunteer", "admin"].includes(user.role)
+    ? user.role
+    : null;
 }
 
 export function getDashboardRoute(role?: User["role"] | null): string {

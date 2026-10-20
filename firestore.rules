@@ -61,15 +61,10 @@ service cloud.firestore {
           !('email' in request.auth.token)
           || data.email == request.auth.token.email
         )
+        && data.role in ['donor', 'collector', 'volunteer']
         && (
-          (data.role == 'collector' && !('requestedRole' in data))
-          || (
-            data.role == 'donor'
-            && (
-              !('requestedRole' in data)
-              || data.requestedRole == 'volunteer'
-            )
-          )
+          !('requestedRole' in data)
+          || (data.role == 'donor' && data.requestedRole == 'volunteer')
         )
         && data.name is string
         && data.name.size() >= 2
@@ -171,6 +166,16 @@ service cloud.firestore {
             resource.data.role == 'donor'
             && resource.data.requestedRole == 'collector'
             && request.resource.data.role == 'collector'
+            && !('requestedRole' in request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['role', 'requestedRole'])
+          )
+          || (
+            (
+              !('role' in resource.data)
+              || !(resource.data.role in ['donor', 'collector', 'volunteer', 'admin'])
+            )
+            && request.resource.data.role in ['donor', 'collector', 'volunteer']
             && !('requestedRole' in request.resource.data)
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['role', 'requestedRole'])

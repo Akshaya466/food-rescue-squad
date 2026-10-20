@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +13,19 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { loginUser, signInWithGoogle } from "@/services/authService";
-import { resolveActiveUserProfile, selectUserRole } from "@/services/userService";
+import {
+  createProfileForAuthenticatedUser,
+  loginUser,
+  signInWithGoogle,
+  type RegistrationRole,
+} from "@/services/authService";
+import {
+  completeUserRoleSelection,
+  getUserProfile,
+  resolveActiveUserProfile,
+} from "@/services/userService";
 import { getDashboardRoute, getEffectiveRole } from "@/services/roleRouting";
+import { auth } from "@/config/firebase";
 import { User } from "@/types";
 
 const loginSchema = z.object({
@@ -23,24 +34,51 @@ const loginSchema = z.object({
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
+type PendingRoleSelection = {
+  firebaseUser: FirebaseUser;
+  profile: User | null;
+};
 
 export default function LoginPage() {
   const [role, setRole] = useState<string>("donor");
   const [roleModal, setRoleModal] = useState(false);
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
-  const [selectedRole, setSelectedRole] = useState<string>("donor");
+  const [pendingRoleSelection, setPendingRoleSelection] =
+    useState<PendingRoleSelection | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RegistrationRole | "">("");
   const navigate = useNavigate();
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
 
+  useEffect(() => onAuthStateChanged(auth, (firebaseUser) => {
+    if (!firebaseUser) return;
+    void getUserProfile(firebaseUser.uid).then((profile) => {
+      if (getEffectiveRole(profile)) return;
+      setPendingRoleSelection({ firebaseUser, profile });
+      setSelectedRole("");
+      setRoleModal(true);
+    }).catch((error: unknown) => {
+      console.error("Could not check the signed-in user's profile:", error);
+      toast.error("Could not load your profile. Please try again.");
+    });
+  }), []);
+
   const onSubmit = async (data: LoginForm) => {
     try {
       const signedInUser = await loginUser(data.email, data.password);
-      const user = await resolveActiveUserProfile(signedInUser.id);
-      if (!user) throw new Error("User profile not found");
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error("Sign-in completed without an active session.");
+      const user = signedInUser
+        ? await resolveActiveUserProfile(signedInUser.id)
+        : null;
       const effectiveRole = getEffectiveRole(user);
+      if (!user || !effectiveRole) {
+        setPendingRoleSelection({ firebaseUser, profile: user });
+        setSelectedRole("");
+        setRoleModal(true);
+        return;
+      }
       if (
         user.role !== "admin" &&
         user.role !== role &&
@@ -76,18 +114,17 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      const signedInUser = await signInWithGoogle();
-      const user = await resolveActiveUserProfile(signedInUser.id);
-      if (!user) throw new Error("User profile not found");
+      const result = await signInWithGoogle();
+      const user = result.profile
+        ? await resolveActiveUserProfile(result.profile.id)
+        : null;
       const effectiveRole = getEffectiveRole(user);
-
-      if (!user.role || user.role === "donor") {
-        if (effectiveRole === "collector") {
-          toast.success(`Welcome, ${user.name}!`);
-          navigate(getDashboardRoute("collector"));
-          return;
-        }
-        setGoogleUser(user);
+      if (!user || !effectiveRole) {
+        setPendingRoleSelection({
+          firebaseUser: result.firebaseUser,
+          profile: user,
+        });
+        setSelectedRole("");
         setRoleModal(true);
         return;
       }
@@ -109,16 +146,20 @@ export default function LoginPage() {
   };
 
   const handleRoleConfirm = async () => {
-    if (!googleUser) return;
-    const normalizedRole = selectedRole as "donor" | "collector" | "volunteer";
+    if (!pendingRoleSelection || !selectedRole) return;
     try {
-      const updatedUser = await selectUserRole(googleUser.id, normalizedRole);
+      const updatedUser = pendingRoleSelection.profile
+        ? await completeUserRoleSelection(
+            pendingRoleSelection.firebaseUser.uid,
+            selectedRole
+          )
+        : await createProfileForAuthenticatedUser(
+            pendingRoleSelection.firebaseUser,
+            selectedRole
+          );
       setRoleModal(false);
-      if (normalizedRole === "volunteer") {
-        toast.success("Your volunteer request was submitted. Volunteer access remains pending.");
-      } else {
-        toast.success(`Welcome, ${googleUser.name}!`);
-      }
+      setPendingRoleSelection(null);
+      toast.success(`Welcome, ${updatedUser.name}!`);
       navigate(getDashboardRoute(updatedUser.role));
     } catch (error: unknown) {
       toast.error(
@@ -205,24 +246,31 @@ export default function LoginPage() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">How will you use Annora?</p>
           <div className="space-y-2">
-            {["donor", "collector", "volunteer"].map((r) => (
+            {([
+              ["donor", "Donor", "Posts surplus food."],
+              ["collector", "Collector", "Discovers available food and accesses listing details."],
+              ["volunteer", "Delivery Volunteer", "Helps deliver collected food."],
+            ] as const).map(([value, label, description]) => (
               <button
-                key={r}
+                key={value}
                 className={`w-full p-3 rounded-lg border text-left capitalize font-medium transition-colors ${
-                  selectedRole === r
+                  selectedRole === value
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-muted hover:bg-muted"
                 }`}
-                onClick={() => setSelectedRole(r)}
+                onClick={() => setSelectedRole(value)}
               >
-                {r === "donor" ? "🍱 Donor — Restaurant / Canteen" :
-                 r === "collector" ? "🏢 Collector — NGO / Community Kitchen" :
-                 "🛵 Volunteer — Delivery Partner"}
+                <span className="block">{label}</span>
+                <span className="mt-1 block text-xs font-normal normal-case text-muted-foreground">
+                  {description}
+                </span>
               </button>
             ))}
           </div>
           <DialogFooter>
-            <Button onClick={handleRoleConfirm}>Continue</Button>
+            <Button onClick={handleRoleConfirm} disabled={!selectedRole}>
+              Continue
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

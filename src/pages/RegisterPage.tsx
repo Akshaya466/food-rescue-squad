@@ -4,17 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Leaf } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { registerUser } from "@/services/authService";
-import { signInWithGoogle } from "@/services/authService";
-import { selectUserRole } from "@/services/userService";
+import {
+  createProfileForAuthenticatedUser,
+  registerUser,
+  signInWithGoogle,
+  type RegistrationRole,
+} from "@/services/authService";
+import { completeUserRoleSelection } from "@/services/userService";
+import { getDashboardRoute, getEffectiveRole } from "@/services/roleRouting";
 import { User } from "@/types";
+
+const registrationRoles: RegistrationRole[] = [
+  "donor",
+  "collector",
+  "volunteer",
+];
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required").max(100),
@@ -33,11 +43,15 @@ const registerSchema = z.object({
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
-type RegistrationRole = Exclude<User["role"], "admin">;
-const registrationRoles: RegistrationRole[] = ["donor", "collector", "volunteer"];
+const roleDescriptions: Record<RegistrationRole, string> = {
+  donor: "Posts surplus food.",
+  collector: "Discovers available food and accesses listing details.",
+  volunteer: "Helps deliver collected food.",
+};
 
 export default function RegisterPage() {
-  const [role, setRole] = useState<RegistrationRole>("donor");
+  const [role, setRole] = useState<RegistrationRole | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { register, handleSubmit, formState: { errors, isSubmitting }, setValue, watch } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -45,6 +59,10 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterForm) => {
+    if (!role) {
+      setRoleError("Choose a role before creating your account.");
+      return;
+    }
     try {
       const user = await registerUser({
         name: data.name,
@@ -57,13 +75,7 @@ export default function RegisterPage() {
       });
 
       toast.success("Account created successfully!");
-
-      const routes: Record<string, string> = {
-        donor: "/donor/dashboard",
-        collector: "/collector/dashboard",
-        volunteer: "/volunteer/dashboard",
-      };
-      navigate(routes[user.role] || "/donor/dashboard");
+      navigate(getDashboardRoute(user.role));
     } catch (error: unknown) {
       const code =
         error instanceof Error &&
@@ -96,21 +108,34 @@ export default function RegisterPage() {
           <CardDescription>Join Annora and start making an impact</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <Tabs
-            value={role}
-            onValueChange={(value) => {
-              const selectedRole = registrationRoles.find(
-                (candidate) => candidate === value
-              );
-              if (selectedRole) setRole(selectedRole);
-            }}
-          >
-            <TabsList className="grid grid-cols-3 w-full">
-              <TabsTrigger value="donor">Donor</TabsTrigger>
-              <TabsTrigger value="collector">Collector</TabsTrigger>
-              <TabsTrigger value="volunteer">Volunteer</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="grid gap-2" role="group" aria-label="Choose your role">
+            {registrationRoles.map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                aria-pressed={role === candidate}
+                onClick={() => {
+                  setRole(candidate);
+                  setRoleError(null);
+                }}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  role === candidate
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted hover:bg-muted"
+                }`}
+              >
+                <span className="block font-medium">
+                  {candidate === "volunteer"
+                    ? "Delivery Volunteer"
+                    : candidate[0].toUpperCase() + candidate.slice(1)}
+                </span>
+                <span className="mt-1 block text-sm font-normal text-muted-foreground">
+                  {roleDescriptions[candidate]}
+                </span>
+              </button>
+            ))}
+          </div>
+          {roleError && <p className="text-xs text-destructive">{roleError}</p>}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
@@ -180,32 +205,44 @@ export default function RegisterPage() {
           </div>
 
           <Button
-  variant="outline"
-  className="w-full"
-  onClick={async () => {
-    try {
-      const user = await signInWithGoogle();
-      const updatedUser = await selectUserRole(user.id, role);
-      if (role === "volunteer") {
-        toast.success("Your volunteer request was submitted. Volunteer access remains pending.");
-      } else {
-        toast.success(`Welcome, ${user.name}!`);
-      }
-      const routes: Record<string, string> = {
-        donor: "/donor/dashboard",
-        collector: "/collector/dashboard",
-        volunteer: "/volunteer/dashboard",
-      };
-      navigate(routes[updatedUser.role] || "/donor/dashboard");
-    } catch (error: unknown) {
-      toast.error(
-        error instanceof Error && error.message
-          ? error.message
-          : "Google sign-in failed. Please try again."
-      );
-    }
-  }}
->
+            variant="outline"
+            className="w-full"
+            onClick={async () => {
+              if (!role) {
+                setRoleError("Choose a role before creating your account.");
+                return;
+              }
+
+              try {
+                const result = await signInWithGoogle();
+                let user: User;
+                if (!result.profile) {
+                  user = await createProfileForAuthenticatedUser(
+                    result.firebaseUser,
+                    role
+                  );
+                } else if (!getEffectiveRole(result.profile)) {
+                  user = await completeUserRoleSelection(
+                    result.firebaseUser.uid,
+                    role
+                  );
+                } else {
+                  user = result.profile;
+                  toast.success(`Welcome back, ${user.name}! Your existing role was kept.`);
+                }
+                if (!result.profile || !getEffectiveRole(result.profile)) {
+                  toast.success(`Welcome, ${user.name}!`);
+                }
+                navigate(getDashboardRoute(user.role));
+              } catch (error: unknown) {
+                toast.error(
+                  error instanceof Error && error.message
+                    ? error.message
+                    : "Google sign-in failed. Please try again."
+                );
+              }
+            }}
+          >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.77c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>

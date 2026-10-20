@@ -106,6 +106,19 @@ describe("RoleRouteGuard", () => {
     expect(screen.queryByText("Collector dashboard content")).not.toBeInTheDocument();
   });
 
+  it("redirects profiles without a valid role to login for role completion", async () => {
+    setAuthState({ uid: "roleless-user" });
+    profileMocks.resolveActiveUserProfile.mockResolvedValue({
+      id: "roleless-user",
+      role: undefined,
+    });
+
+    render(<TestRoutes><p>Collector dashboard content</p></TestRoutes>);
+
+    expect(await screen.findByText("Login destination")).toBeInTheDocument();
+    expect(screen.queryByText("Collector dashboard content")).not.toBeInTheDocument();
+  });
+
   it("requires the trusted Firebase admin claim for an admin dashboard", async () => {
     setAuthState({ uid: "admin-profile-without-claim" });
     profileMocks.resolveActiveUserProfile.mockResolvedValue({

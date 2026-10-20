@@ -157,7 +157,7 @@ describe("Firestore security rules", () => {
     );
   });
 
-  it("allows a user to create an active collector profile but never an admin profile", async () => {
+  it("allows public roles at profile creation but never an admin profile", async () => {
     const collectorDb = testEnvironment
       .authenticatedContext("new-collector")
       .firestore();
@@ -165,6 +165,16 @@ describe("Firestore security rules", () => {
       setDoc(doc(collectorDb, "users", "new-collector"), {
         ...userProfile("new-collector"),
         role: "collector",
+      })
+    );
+
+    const volunteerDb = testEnvironment
+      .authenticatedContext("new-volunteer")
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(volunteerDb, "users", "new-volunteer"), {
+        ...userProfile("new-volunteer"),
+        role: "volunteer",
       })
     );
 
@@ -179,20 +189,29 @@ describe("Firestore security rules", () => {
     );
   });
 
-  it("keeps volunteer registration pending as a donor profile", async () => {
-    const volunteerApplicantDb = testEnvironment
+  it("allows a new volunteer role and preserves legacy pending volunteer profiles", async () => {
+    const legacyApplicantDb = testEnvironment
       .authenticatedContext("volunteer-applicant")
       .firestore();
     await assertSucceeds(
-      setDoc(doc(volunteerApplicantDb, "users", "volunteer-applicant"), {
+      setDoc(doc(legacyApplicantDb, "users", "volunteer-applicant"), {
         ...userProfile("volunteer-applicant"),
         requestedRole: "volunteer",
       })
     );
-    await assertFails(
-      setDoc(doc(volunteerApplicantDb, "users", "volunteer-applicant-active"), {
-        ...userProfile("volunteer-applicant-active"),
+    const activeVolunteerDb = testEnvironment
+      .authenticatedContext("active-volunteer")
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(activeVolunteerDb, "users", "active-volunteer"), {
+        ...userProfile("active-volunteer"),
         role: "volunteer",
+      })
+    );
+    await assertFails(
+      updateDoc(doc(legacyApplicantDb, "users", "volunteer-applicant"), {
+        role: "volunteer",
+        requestedRole: deleteField(),
       })
     );
   });
@@ -250,6 +269,37 @@ describe("Firestore security rules", () => {
         requestedRole: deleteField(),
         isVerified: true,
       })
+    );
+  });
+
+  it("allows completion only for a missing or invalid public role", async () => {
+    const rolelessUid = "roleless-profile";
+    const donorUid = "valid-donor-role";
+    const adminUid = "protected-admin-role";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      const roleless = userProfile(rolelessUid) as Record<string, unknown>;
+      delete roleless.role;
+      await setDoc(doc(db, "users", rolelessUid), roleless);
+      await setDoc(doc(db, "users", donorUid), userProfile(donorUid));
+      await setDoc(doc(db, "users", adminUid), {
+        ...userProfile(adminUid),
+        role: "admin",
+      });
+    });
+
+    const rolelessDb = testEnvironment.authenticatedContext(rolelessUid).firestore();
+    const donorDb = testEnvironment.authenticatedContext(donorUid).firestore();
+    const adminDb = testEnvironment.authenticatedContext(adminUid).firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(rolelessDb, "users", rolelessUid), { role: "volunteer" })
+    );
+    await assertFails(
+      updateDoc(doc(donorDb, "users", donorUid), { role: "volunteer" })
+    );
+    await assertFails(
+      updateDoc(doc(adminDb, "users", adminUid), { role: "volunteer" })
     );
   });
 
@@ -381,6 +431,24 @@ describe("Firestore security rules", () => {
     await assertSucceeds(getDocs(collection(volunteerDb, "listingClaims")));
     await assertSucceeds(
       getDocs(query(collection(volunteerDb, "deliveries"), where("status", "==", "assigned")))
+    );
+  });
+
+  it("keeps volunteer access limited to delivery and claim data", async () => {
+    const volunteerId = "delivery-only-volunteer";
+    const listingId = "delivery-only-listing";
+    await seedListingAndCollector("delivery-only-collector", listingId);
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", volunteerId), {
+        ...userProfile(volunteerId),
+        role: "volunteer",
+      });
+    });
+    const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
+
+    await assertFails(getDocs(collection(volunteerDb, "listings")));
+    await assertFails(
+      addDoc(collection(volunteerDb, "listings"), listing(volunteerId))
     );
   });
 

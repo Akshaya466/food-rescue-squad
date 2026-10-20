@@ -30,46 +30,27 @@ export async function updateUserProfile(
 export async function resolveActiveUserProfile(
   userId: string
 ): Promise<User | null> {
-  const profile = await getUserProfile(userId);
-  if (
-    profile?.role === "donor" &&
-    profile.requestedRole === "collector"
-  ) {
-    return selectUserRole(userId, "collector");
-  }
-  return profile;
+  return getUserProfile(userId);
 }
 
-export async function selectUserRole(
+export async function completeUserRoleSelection(
   userId: string,
   role: Exclude<User["role"], "admin">
 ): Promise<User> {
   const profile = await getUserProfile(userId);
   if (!profile) throw new Error("User profile not found");
-  if (profile.role !== "donor") return profile;
-
-  if (role === "collector") {
-    if (profile.requestedRole !== "collector") {
-      await updateUserProfile(userId, { requestedRole: "collector" });
-    }
-    await updateDoc(doc(db, "users", userId), {
-      role: "collector",
-      requestedRole: deleteField(),
-    });
-  } else if (role === "volunteer") {
-    await updateUserProfile(userId, { requestedRole: "volunteer" });
-    return (await getUserProfile(userId)) || profile;
-  } else {
-    if (profile.requestedRole) {
-      await updateDoc(doc(db, "users", userId), {
-        requestedRole: deleteField(),
-      });
-    }
+  if (["donor", "collector", "volunteer", "admin"].includes(profile.role)) {
+    if (profile.role === role) return profile;
+    throw new Error("This account already has a valid role. Its role was not changed.");
   }
 
+  await updateDoc(doc(db, "users", userId), {
+    role,
+    requestedRole: deleteField(),
+  });
   const updatedProfile = await getUserProfile(userId);
   if (!updatedProfile || updatedProfile.role !== role) {
-    throw new Error(`Could not activate the ${role} role`);
+    throw new Error(`Could not save the ${role} role`);
   }
   return updatedProfile;
 }
