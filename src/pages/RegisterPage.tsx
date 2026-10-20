@@ -13,7 +13,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { registerUser } from "@/services/authService";
 import { signInWithGoogle } from "@/services/authService";
-import { updateUserProfile } from "@/services/userService";
+import { selectUserRole } from "@/services/userService";
 import { User } from "@/types";
 
 const registerSchema = z.object({
@@ -57,9 +57,6 @@ export default function RegisterPage() {
       });
 
       toast.success("Account created successfully!");
-      if (user.requestedRole) {
-        toast.info("Your account is active as a donor. Collector or volunteer access is pending admin approval.");
-      }
 
       const routes: Record<string, string> = {
         donor: "/donor/dashboard",
@@ -188,21 +185,24 @@ export default function RegisterPage() {
   onClick={async () => {
     try {
       const user = await signInWithGoogle();
-      if (user.role === "donor" && role !== "donor") {
-        await updateUserProfile(user.id, {
-          requestedRole: role,
-        });
-        toast.info("Your request was submitted. You can use donor features while awaiting approval.");
+      const updatedUser = await selectUserRole(user.id, role);
+      if (role === "volunteer") {
+        toast.success("Your volunteer request was submitted. Volunteer access remains pending.");
+      } else {
+        toast.success(`Welcome, ${user.name}!`);
       }
-      toast.success(`Welcome, ${user.name}!`);
       const routes: Record<string, string> = {
         donor: "/donor/dashboard",
         collector: "/collector/dashboard",
         volunteer: "/volunteer/dashboard",
       };
-      navigate(routes[user.role] || "/donor/dashboard");
-    } catch {
-      toast.error("Google sign-in failed. Please try again.");
+      navigate(routes[updatedUser.role] || "/donor/dashboard");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Google sign-in failed. Please try again."
+      );
     }
   }}
 >

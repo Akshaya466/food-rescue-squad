@@ -1,4 +1,3 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { User } from "@/types";
 
 interface CollectorAccessPendingNoticeProps {
@@ -12,13 +11,5 @@ export function CollectorAccessPendingNotice({
     return null;
   }
 
-  return (
-    <Alert className="border-warning/30 bg-warning/5">
-      <AlertTitle>Collector access pending approval</AlertTitle>
-      <AlertDescription>
-        Your account is active as a donor while an administrator reviews your
-        collector access request.
-      </AlertDescription>
-    </Alert>
-  );
+  return null;
 }

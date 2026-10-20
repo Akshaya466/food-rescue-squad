@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CollectorAccessPendingNotice } from "./CollectorAccessPendingNotice";
 
 describe("CollectorAccessPendingNotice", () => {
-  it("shows the approval notice only for donor accounts requesting collector access", () => {
+  it("does not show collector approval messaging for active collector accounts or mismatched applicant records", () => {
     const { rerender } = render(
       <CollectorAccessPendingNotice
         user={{ role: "donor", requestedRole: "collector" }}
@@ -11,11 +11,8 @@ describe("CollectorAccessPendingNotice", () => {
     );
 
     expect(
-      screen.getByText("Collector access pending approval")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/account is active as a donor/i)
-    ).toBeInTheDocument();
+      screen.queryByText("Collector access pending approval")
+    ).not.toBeInTheDocument();
 
     rerender(<CollectorAccessPendingNotice user={{ role: "donor" }} />);
     expect(

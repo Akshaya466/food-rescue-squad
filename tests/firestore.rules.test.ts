@@ -16,8 +16,10 @@ import {
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
@@ -109,6 +111,146 @@ describe("Firestore security rules", () => {
 
     await assertFails(
       updateDoc(doc(donorDb, "users", "role-escalation-donor"), { role: "admin" })
+    );
+  });
+
+  it("allows a user to create an active collector profile but never an admin profile", async () => {
+    const collectorDb = testEnvironment
+      .authenticatedContext("new-collector")
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(collectorDb, "users", "new-collector"), {
+        ...userProfile("new-collector"),
+        role: "collector",
+      })
+    );
+
+    const adminDb = testEnvironment
+      .authenticatedContext("self-admin")
+      .firestore();
+    await assertFails(
+      setDoc(doc(adminDb, "users", "self-admin"), {
+        ...userProfile("self-admin"),
+        role: "admin",
+      })
+    );
+  });
+
+  it("keeps volunteer registration pending as a donor profile", async () => {
+    const volunteerApplicantDb = testEnvironment
+      .authenticatedContext("volunteer-applicant")
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(volunteerApplicantDb, "users", "volunteer-applicant"), {
+        ...userProfile("volunteer-applicant"),
+        requestedRole: "volunteer",
+      })
+    );
+    await assertFails(
+      setDoc(doc(volunteerApplicantDb, "users", "volunteer-applicant-active"), {
+        ...userProfile("volunteer-applicant-active"),
+        role: "volunteer",
+      })
+    );
+  });
+
+  it("allows only the requested donor-to-collector role transition", async () => {
+    const uid = "collector-transition";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid), {
+        ...userProfile(uid),
+        requestedRole: "collector",
+      });
+    });
+    const collectorDb = testEnvironment.authenticatedContext(uid).firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(collectorDb, "users", uid), {
+        role: "collector",
+        requestedRole: deleteField(),
+      })
+    );
+
+    const updated = await getDoc(doc(collectorDb, "users", uid));
+    if (!updated.exists()) throw new Error("Expected transitioned profile");
+    if (updated.data().role !== "collector") {
+      throw new Error("Expected collector role to be persisted");
+    }
+  });
+
+  it("denies collector transition without a collector request or with unrelated field changes", async () => {
+    const noRequestUid = "donor-no-collector-request";
+    const extraChangeUid = "collector-transition-extra-change";
+    await seedUser(noRequestUid);
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", extraChangeUid), {
+        ...userProfile(extraChangeUid),
+        requestedRole: "collector",
+      });
+    });
+
+    const noRequestDb = testEnvironment
+      .authenticatedContext(noRequestUid)
+      .firestore();
+    const extraChangeDb = testEnvironment
+      .authenticatedContext(extraChangeUid)
+      .firestore();
+
+    await assertFails(
+      updateDoc(doc(noRequestDb, "users", noRequestUid), {
+        role: "collector",
+      })
+    );
+    await assertFails(
+      updateDoc(doc(extraChangeDb, "users", extraChangeUid), {
+        role: "collector",
+        requestedRole: deleteField(),
+        isVerified: true,
+      })
+    );
+  });
+
+  it("authorizes collector listing reads only after the active role is stored", async () => {
+    const uid = "listing-collector";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", uid), {
+        ...userProfile(uid),
+        requestedRole: "collector",
+      });
+      await setDoc(
+        doc(context.firestore(), "listings", "available-listing"),
+        listing("listing-donor")
+      );
+    });
+    const collectorDb = testEnvironment.authenticatedContext(uid).firestore();
+    await assertFails(getDocs(collection(collectorDb, "listings")));
+
+    await assertSucceeds(
+      updateDoc(doc(collectorDb, "users", uid), {
+        role: "collector",
+        requestedRole: deleteField(),
+      })
+    );
+    await assertSucceeds(getDocs(collection(collectorDb, "listings")));
+  });
+
+  it("does not allow a user to transition another user's profile", async () => {
+    const ownerUid = "collector-role-owner";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", ownerUid), {
+        ...userProfile(ownerUid),
+        requestedRole: "collector",
+      });
+    });
+    const otherUserDb = testEnvironment
+      .authenticatedContext("different-role-user")
+      .firestore();
+
+    await assertFails(
+      updateDoc(doc(otherUserDb, "users", ownerUid), {
+        role: "collector",
+        requestedRole: deleteField(),
+      })
     );
   });
 

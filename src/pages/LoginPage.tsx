@@ -13,7 +13,8 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { loginUser, signInWithGoogle } from "@/services/authService";
-import { updateUserProfile } from "@/services/userService";
+import { resolveActiveUserProfile, selectUserRole } from "@/services/userService";
+import { getDashboardRoute, getEffectiveRole } from "@/services/roleRouting";
 import { User } from "@/types";
 
 const loginSchema = z.object({
@@ -34,33 +35,22 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const routes: Record<string, string> = {
-    donor: "/donor/dashboard",
-    collector: "/collector/dashboard",
-    volunteer: "/volunteer/dashboard",
-    admin: "/admin/dashboard",
-  };
-
   const onSubmit = async (data: LoginForm) => {
     try {
-      const user = await loginUser(data.email, data.password);
-      const collectorRequestPending =
-        user.role === "donor" && user.requestedRole === "collector";
+      const signedInUser = await loginUser(data.email, data.password);
+      const user = await resolveActiveUserProfile(signedInUser.id);
+      if (!user) throw new Error("User profile not found");
+      const effectiveRole = getEffectiveRole(user);
       if (
         user.role !== "admin" &&
         user.role !== role &&
-        !collectorRequestPending
+        effectiveRole !== "collector"
       ) {
         toast.error(`This account is registered as a ${user.role}, not a ${role}.`);
         return;
       }
       toast.success(`Welcome back, ${user.name}!`);
-      if (collectorRequestPending) {
-        toast.info(
-          "Collector access pending approval. You can use donor features while awaiting approval."
-        );
-      }
-      navigate(routes[user.role] || "/donor/dashboard");
+      navigate(getDashboardRoute(effectiveRole));
     } catch (error: unknown) {
       const code =
         error instanceof Error &&
@@ -86,51 +76,57 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      const user = await signInWithGoogle();
-      if (user.role === "donor" && user.requestedRole === "collector") {
-        toast.info(
-          "Collector access pending approval. You can use donor features while awaiting approval."
-        );
-        navigate(routes.donor);
-        return;
-      }
+      const signedInUser = await signInWithGoogle();
+      const user = await resolveActiveUserProfile(signedInUser.id);
+      if (!user) throw new Error("User profile not found");
+      const effectiveRole = getEffectiveRole(user);
+
       if (!user.role || user.role === "donor") {
+        if (effectiveRole === "collector") {
+          toast.success(`Welcome, ${user.name}!`);
+          navigate(getDashboardRoute("collector"));
+          return;
+        }
         setGoogleUser(user);
         setRoleModal(true);
-      } else {
-        toast.success(`Welcome, ${user.name}!`);
-        navigate(routes[user.role] || "/donor/dashboard");
+        return;
       }
-    
-} catch (error: unknown) {
-  const code =
-    error instanceof Error && "code" in error && typeof error.code === "string"
-      ? error.code
-      : undefined;
-  const message = error instanceof Error ? error.message : undefined;
-  console.error("Anora Google sign-in failed:", error);
-  console.error("Error code:", code);
-  console.error("Error message:", message);
 
-  toast.error(
-    `${code || "Error"}: ${message || "Unknown error"}`
-  );
-}
+      toast.success(`Welcome, ${user.name}!`);
+      navigate(getDashboardRoute(effectiveRole));
+    } catch (error: unknown) {
+      const code =
+        error instanceof Error && "code" in error && typeof error.code === "string"
+          ? error.code
+          : undefined;
+      const message = error instanceof Error ? error.message : undefined;
+      console.error("Anora Google sign-in failed:", error);
+      console.error("Error code:", code);
+      console.error("Error message:", message);
 
+      toast.error(`${code || "Error"}: ${message || "Unknown error"}`);
+    }
   };
 
   const handleRoleConfirm = async () => {
     if (!googleUser) return;
-    await updateUserProfile(googleUser.id, {
-      requestedRole: selectedRole as "donor" | "collector" | "volunteer",
-    });
-    setRoleModal(false);
-    toast.success(
-      selectedRole === "donor"
-        ? `Welcome, ${googleUser.name}!`
-        : "Your request was submitted. You can use donor features while awaiting approval."
-    );
-    navigate(routes.donor);
+    const normalizedRole = selectedRole as "donor" | "collector" | "volunteer";
+    try {
+      const updatedUser = await selectUserRole(googleUser.id, normalizedRole);
+      setRoleModal(false);
+      if (normalizedRole === "volunteer") {
+        toast.success("Your volunteer request was submitted. Volunteer access remains pending.");
+      } else {
+        toast.success(`Welcome, ${googleUser.name}!`);
+      }
+      navigate(getDashboardRoute(updatedUser.role));
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not update your account role. Please try again."
+      );
+    }
   };
 
   return (

@@ -49,9 +49,16 @@ service cloud.firestore {
           !('email' in request.auth.token)
           || data.email == request.auth.token.email
         )
-        && data.role == 'donor'
-        && (!('requestedRole' in data)
-          || data.requestedRole in ['collector', 'volunteer'])
+        && (
+          (data.role == 'collector' && !('requestedRole' in data))
+          || (
+            data.role == 'donor'
+            && (
+              !('requestedRole' in data)
+              || data.requestedRole == 'volunteer'
+            )
+          )
+        )
         && data.name is string
         && data.name.size() >= 2
         && data.name.size() <= 100
@@ -127,23 +134,35 @@ service cloud.firestore {
 
       allow update: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly([
-            'name', 'phone', 'orgName', 'location', 'requestedRole'
-          ])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 2
-        && request.resource.data.name.size() <= 100
-        && request.resource.data.phone is string
-        && request.resource.data.phone.size() <= 15
-        && request.resource.data.orgName is string
-        && request.resource.data.orgName.size() <= 200
-        && validLocation(request.resource.data.location)
-        && request.resource.data.location.lat == resource.data.location.lat
-        && request.resource.data.location.lng == resource.data.location.lng
         && (
-          !('requestedRole' in request.resource.data)
-          || request.resource.data.requestedRole in ['donor', 'collector', 'volunteer']
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'name', 'phone', 'orgName', 'location', 'requestedRole'
+              ])
+            && request.resource.data.name is string
+            && request.resource.data.name.size() >= 2
+            && request.resource.data.name.size() <= 100
+            && request.resource.data.phone is string
+            && request.resource.data.phone.size() <= 15
+            && request.resource.data.orgName is string
+            && request.resource.data.orgName.size() <= 200
+            && validLocation(request.resource.data.location)
+            && request.resource.data.location.lat == resource.data.location.lat
+            && request.resource.data.location.lng == resource.data.location.lng
+            && (
+              !('requestedRole' in request.resource.data)
+              || request.resource.data.requestedRole in ['donor', 'collector', 'volunteer']
+            )
+          )
+          || (
+            resource.data.role == 'donor'
+            && resource.data.requestedRole == 'collector'
+            && request.resource.data.role == 'collector'
+            && !('requestedRole' in request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['role', 'requestedRole'])
+          )
         );
 
       allow delete: if false;
