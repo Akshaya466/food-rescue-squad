@@ -24,17 +24,18 @@ React · TypeScript · Firebase · Tailwind CSS · Leaflet.js · Vercel
 ## Firebase security
 
 Firestore rules are in `firestore.rules`; `firebase.json` points Firebase CLI at
-that rules file and the `functions` directory. Claiming a listing, creating its
-delivery and donor notification, approving elevated roles, changing verification
-status, advancing deliveries, listing eligible rating opportunities, and submitting
-ratings are performed by trusted Cloud Functions. The rating form only offers
-completed deliveries and participants approved by the backend eligibility checks.
-Administrators can mark a profile verified after review; users cannot change their
-own verification status.
+that rules file and the `functions` directory. Collector claims and releases are
+atomic Firestore transactions whose allowed listing, delivery, and volunteer-alert
+writes are validated by Rules. A claim creates a deterministic delivery record and
+a `listingClaims` alert that delivery volunteers can read. Volunteers can advance
+an assigned delivery through en route, picked up, and delivered; marking it delivered
+updates the listing in the same transaction. No Cloud Function is required for
+these workflows. Role administration, verification changes, and rating operations
+remain trusted-backend-only; users cannot change their own verification status.
 
-New accounts start with the donor role. Collector and volunteer selections are
-requests until an administrator approves them. Admin accounts must be provisioned
-from a trusted environment with Application Default Credentials:
+Collector accounts are active immediately after registration. Volunteer role
+selections remain requests until an administrator approves them. Admin accounts
+must be provisioned from a trusted environment with Application Default Credentials:
 
 ```powershell
 cd functions
@@ -46,9 +47,9 @@ role. The administrator must sign in again to refresh the custom claim. Never
 grant admin privileges from client code.
 
 Install the function dependencies with `npm install` from `functions/` before
-deployment. Existing deliveries created by the earlier client flow use random
-document IDs; they need a one-time trusted migration before enabling the new
-deterministic claim workflow if those records must remain claimable/unclaimable.
+deploying trusted-backend features. Existing deliveries created by the earlier
+client flow use random document IDs; a one-time trusted migration is needed for
+those legacy claims to work with deterministic claim/release operations.
 Run `npm run migrate-roles` before enabling the new role policy so previously
 self-selected collector/volunteer accounts are returned to donor access pending
 admin approval. Review the output of `npm run migrate-deliveries`; it skips

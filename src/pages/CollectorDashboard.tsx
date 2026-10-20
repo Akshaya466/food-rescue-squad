@@ -15,7 +15,7 @@ import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { recordListingAccess } from "@/services/listingAccessService";
+import { claimListing, unclaimListing } from "@/services/foodService";
 import { toast } from "sonner";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -79,6 +79,7 @@ export default function CollectorDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
   const [listingError, setListingError] = useState<string | null>(null);
+  const [claimBusy, setClaimBusy] = useState(false);
 
   useEffect(() => {
     let unsubscribeListings: (() => void) | null = null;
@@ -141,22 +142,40 @@ export default function CollectorDashboard() {
     return true;
   });
 
-  const recordCollectorAccess = async (listing: FoodListing) => {
-    if (!user || user.role !== "collector") {
-      toast.error("Could not notify delivery volunteers: collector profile is unavailable.");
-      return;
-    }
+  const openListingDetails = (listing: FoodListing) => {
+    setViewTarget(listing);
+  };
+
+  const selectedListing = viewTarget
+    ? allData.find((listing) => listing.id === viewTarget.id) ?? viewTarget
+    : null;
+
+  const handleClaim = async () => {
+    if (!selectedListing || !user) return;
+    setClaimBusy(true);
     try {
-      await recordListingAccess(listing, user);
+      await claimListing(selectedListing.id, user);
+      toast.success("Food claimed. Delivery volunteers have been notified.");
     } catch (error: unknown) {
-      console.error("Could not record collector listing access:", error);
-      toast.error("Could not notify delivery volunteers about this food.");
+      console.error("Could not claim food listing:", error);
+      toast.error(error instanceof Error ? error.message : "Could not claim this food.");
+    } finally {
+      setClaimBusy(false);
     }
   };
 
-  const openListingDetails = (listing: FoodListing) => {
-    setViewTarget(listing);
-    void recordCollectorAccess(listing);
+  const handleUnclaim = async () => {
+    if (!selectedListing) return;
+    setClaimBusy(true);
+    try {
+      await unclaimListing(selectedListing.id);
+      toast.success("Food claim released.");
+    } catch (error: unknown) {
+      console.error("Could not release food claim:", error);
+      toast.error(error instanceof Error ? error.message : "Could not release this claim.");
+    } finally {
+      setClaimBusy(false);
+    }
   };
 
   const totalKgClaimed = claimedListings.reduce(
@@ -276,7 +295,7 @@ export default function CollectorDashboard() {
                         </div>
                         <div className="flex">
                           <Button variant="outline" size="sm" className="w-full" onClick={() => openListingDetails(l)}>
-                            View food & pickup
+                            Details
                           </Button>
                         </div>
                       </div>
@@ -300,6 +319,9 @@ export default function CollectorDashboard() {
                         </p>
                       </div>
                       <StatusBadge status={l.status} />
+                      <Button variant="outline" size="sm" onClick={() => openListingDetails(l)}>
+                        Details
+                      </Button>
                     </CardContent>
                   </Card>
                 ))}
@@ -321,7 +343,6 @@ export default function CollectorDashboard() {
                   key={l.id}
                   position={[l.location.lat, l.location.lng]}
                   icon={getMarkerIcon(l)}
-                  eventHandlers={{ popupopen: () => void recordCollectorAccess(l) }}
                 >
                   <Popup>
                     <div className="space-y-2 min-w-[180px]">
@@ -341,29 +362,47 @@ export default function CollectorDashboard() {
         <Dialog open={!!viewTarget} onOpenChange={() => setViewTarget(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>{viewTarget?.foodType}</DialogTitle>
+              <DialogTitle>{selectedListing?.foodType}</DialogTitle>
             </DialogHeader>
-            {viewTarget && (
+            {selectedListing && (
               <div className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-muted-foreground">Donor</p><p className="font-medium">{viewTarget.donorName}</p></div>
-                  <div><p className="text-muted-foreground">Category</p><p className="font-medium capitalize">{viewTarget.category}</p></div>
-                  <div><p className="text-muted-foreground">Quantity</p><p className="font-medium">{viewTarget.quantity} {viewTarget.unit}</p></div>
-                  <div><p className="text-muted-foreground">Urgency</p><UrgencyDot level={viewTarget.urgencyLevel} /></div>
+                  <div><p className="text-muted-foreground">Donor</p><p className="font-medium">{selectedListing.donorName}</p></div>
+                  <div><p className="text-muted-foreground">Category</p><p className="font-medium capitalize">{selectedListing.category}</p></div>
+                  <div><p className="text-muted-foreground">Quantity</p><p className="font-medium">{selectedListing.quantity} {selectedListing.unit}</p></div>
+                  <div><p className="text-muted-foreground">Urgency</p><UrgencyDot level={selectedListing.urgencyLevel} /></div>
                 </div>
-                <div><p className="text-muted-foreground">Address</p><p className="font-medium">{viewTarget.address}</p></div>
-                <div><p className="text-muted-foreground">Description</p><p>{viewTarget.description || "—"}</p></div>
-                <div><p className="text-muted-foreground">Dietary Tags</p><p className="font-medium">{viewTarget.dietaryTags.join(", ") || "None"}</p></div>
+                <div><p className="text-muted-foreground">Address</p><p className="font-medium">{selectedListing.address}</p></div>
+                <div><p className="text-muted-foreground">Description</p><p>{selectedListing.description || "—"}</p></div>
+                <div><p className="text-muted-foreground">Dietary Tags</p><p className="font-medium">{selectedListing.dietaryTags.join(", ") || "None"}</p></div>
                 <div>
                   <p className="text-muted-foreground">Pickup Window</p>
                   <p className="font-medium">
-                    {new Date(viewTarget.pickupWindowStart).toLocaleString("en-IN")} — {new Date(viewTarget.pickupWindowEnd).toLocaleString("en-IN")}
+                    {new Date(selectedListing.pickupWindowStart).toLocaleString("en-IN")} — {new Date(selectedListing.pickupWindowEnd).toLocaleString("en-IN")}
                   </p>
                 </div>
               </div>
             )}
-            <DialogFooter>
+            <DialogFooter className="flex-row justify-end gap-2">
               <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
+              {selectedListing?.status === "active" && (
+                <Button onClick={() => void handleClaim()} disabled={claimBusy}>
+                  {claimBusy ? "Claiming..." : "Claim"}
+                </Button>
+              )}
+              {selectedListing?.status === "claimed"
+                && selectedListing.claimedBy === currentUid && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => void handleUnclaim()}
+                    disabled={claimBusy}
+                  >
+                    {claimBusy ? "Releasing..." : "Unclaim"}
+                  </Button>
+                )}
+              {selectedListing?.status === "delivered" && (
+                <Button disabled>Delivered</Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

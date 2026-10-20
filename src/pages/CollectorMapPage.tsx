@@ -6,12 +6,10 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Package } from "lucide-react";
 import { subscribeToListings } from "@/services/foodService";
-import { FoodListing, User } from "@/types";
+import { FoodListing } from "@/types";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
-import { recordListingAccess } from "@/services/listingAccessService";
-import { toast } from "sonner";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,7 +43,6 @@ function getMarkerIcon(listing: FoodListing) {
 
 export default function CollectorMapPage() {
   const [listings, setListings] = useState<FoodListing[]>([]);
-  const [collector, setCollector] = useState<User | null>(null);
   const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,14 +53,12 @@ export default function CollectorMapPage() {
       unsubscribeListings?.();
       unsubscribeListings = null;
       if (!firebaseUser) {
-        setCollector(null);
         setListings([]);
         return;
       }
       try {
         const profile = await getUserProfile(firebaseUser.uid);
         if (generation !== authGeneration) return;
-        setCollector(profile);
         if (!profile || profile.role !== "collector") {
           setListings([]);
           return;
@@ -94,19 +89,6 @@ export default function CollectorMapPage() {
       unsubscribeListings?.();
     };
   }, []);
-
-  const notifyVolunteersOfAccess = async (listing: FoodListing) => {
-    if (!collector || collector.role !== "collector") {
-      toast.error("Could not notify delivery volunteers: collector profile is unavailable.");
-      return;
-    }
-    try {
-      await recordListingAccess(listing, collector);
-    } catch (error: unknown) {
-      console.error("Could not record collector listing access:", error);
-      toast.error("Could not notify delivery volunteers about this food.");
-    }
-  };
 
   return (
     <DashboardLayout role="collector">
@@ -151,7 +133,6 @@ export default function CollectorMapPage() {
                     l.location.lng + (Math.random() - 0.5) * 0.02,
                   ]}
                   icon={getMarkerIcon(l)}
-                  eventHandlers={{ popupopen: () => void notifyVolunteersOfAccess(l) }}
                 >
                   <Popup>
                     <div className="space-y-2 min-w-[200px]">

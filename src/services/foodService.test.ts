@@ -7,13 +7,30 @@ const firestoreMocks = vi.hoisted(() => ({
   onSnapshot: vi.fn(),
   doc: vi.fn(),
   updateDoc: vi.fn(),
+  runTransaction: vi.fn(),
 }));
 
 vi.mock("firebase/firestore", () => firestoreMocks);
-vi.mock("@/config/firebase", () => ({ db: {} }));
+const authMock = vi.hoisted(() => ({
+  currentUser: { uid: "collector-1" } as { uid: string } | null,
+}));
+vi.mock("@/config/firebase", () => ({ db: {}, auth: authMock }));
 
-import { claimListing, createListing, subscribeToListings } from "./foodService";
-import { SparkUnavailableError } from "./sparkUnavailable";
+import { claimListing, createListing, subscribeToListings, unclaimListing } from "./foodService";
+import { User } from "@/types";
+
+const collector: User = {
+  id: "collector-1",
+  name: "Test Collector",
+  email: "collector@example.test",
+  role: "collector",
+  phone: "5550100",
+  location: { lat: 12.9, lng: 77.6, address: "Collector location" },
+  trustScore: 5,
+  totalRescues: 0,
+  isVerified: false,
+  createdAt: "2026-10-20T08:00:00.000Z",
+};
 
 const listingInput = {
   donorId: "donor-1",
@@ -35,6 +52,7 @@ const listingInput = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  authMock.currentUser = { uid: "collector-1" };
 });
 
 describe("createListing", () => {
@@ -115,11 +133,115 @@ describe("subscribeToListings", () => {
 });
 
 describe("claimListing", () => {
-  it("fails closed without a trusted backend and performs no client-side writes", async () => {
-    await expect(claimListing("listing-1")).rejects.toBeInstanceOf(
-      SparkUnavailableError
+  it("atomically claims a listing, creates a delivery, and creates a volunteer alert", async () => {
+    const listingData = {
+      ...listingInput,
+      status: "active",
+      createdAt: "2026-10-20T08:00:00.000Z",
+    };
+    const transaction = {
+      get: vi.fn(async (ref: string) => {
+        if (ref === "listings/listing-1") {
+          return { id: "listing-1", exists: () => true, data: () => listingData };
+        }
+        return { exists: () => false };
+      }),
+      update: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    firestoreMocks.doc.mockImplementation((_, collectionName, id) =>
+      `${collectionName}/${id}`
     );
-    expect(firestoreMocks.addDoc).not.toHaveBeenCalled();
-    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+    firestoreMocks.runTransaction.mockImplementation(async (_, callback) => callback(transaction));
+
+    await expect(claimListing("listing-1", collector)).resolves.toMatchObject({
+      id: "listing-1",
+      status: "claimed",
+      claimedBy: collector.id,
+    });
+
+    expect(transaction.update).toHaveBeenCalledWith("listings/listing-1", {
+      status: "claimed",
+      claimedBy: collector.id,
+    });
+    expect(transaction.set).toHaveBeenCalledWith(
+      "deliveries/listing_listing-1",
+      expect.objectContaining({
+        listingId: "listing-1",
+        volunteerId: "unassigned",
+        status: "assigned",
+        pickupAddress: listingInput.address,
+      })
+    );
+    expect(transaction.set).toHaveBeenCalledWith(
+      "listingClaims/listing-1",
+      expect.objectContaining({
+        listingId: "listing-1",
+        collectorId: collector.id,
+        foodType: listingInput.foodType,
+      })
+    );
+  });
+
+  it("rejects unavailable listings without changing any document", async () => {
+    const transaction = {
+      get: vi.fn(async (ref: string) => ref === "listings/listing-1"
+        ? {
+            id: "listing-1",
+            exists: () => true,
+            data: () => ({ ...listingInput, status: "claimed", claimedBy: "other" }),
+          }
+        : { exists: () => false }),
+      update: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    firestoreMocks.doc.mockImplementation((_, collectionName, id) =>
+      `${collectionName}/${id}`
+    );
+    firestoreMocks.runTransaction.mockImplementation(async (_, callback) => callback(transaction));
+
+    await expect(claimListing("listing-1", collector)).rejects.toThrow(
+      "This food listing is no longer available."
+    );
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  it("releases a claim and removes its pending delivery and volunteer alert", async () => {
+    const transaction = {
+      get: vi.fn(async (ref: string) => {
+        if (ref === "listings/listing-1") {
+          return {
+            exists: () => true,
+            data: () => ({ status: "claimed", claimedBy: collector.id }),
+          };
+        }
+        if (ref === "deliveries/listing_listing-1") {
+          return {
+            exists: () => true,
+            data: () => ({ status: "assigned", volunteerId: "unassigned" }),
+          };
+        }
+        return { exists: () => true };
+      }),
+      update: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    firestoreMocks.doc.mockImplementation((_, collectionName, id) =>
+      `${collectionName}/${id}`
+    );
+    firestoreMocks.runTransaction.mockImplementation(async (_, callback) => callback(transaction));
+
+    await expect(unclaimListing("listing-1")).resolves.toBeUndefined();
+
+    expect(transaction.update).toHaveBeenCalledWith("listings/listing-1", {
+      status: "active",
+      claimedBy: null,
+    });
+    expect(transaction.delete).toHaveBeenCalledWith("deliveries/listing_listing-1");
+    expect(transaction.delete).toHaveBeenCalledWith("listingClaims/listing-1");
   });
 });

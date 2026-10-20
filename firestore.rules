@@ -18,6 +18,18 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
     }
 
+    function listingPath(listingId) {
+      return /databases/$(database)/documents/listings/$(listingId);
+    }
+
+    function deliveryPath(listingId) {
+      return /databases/$(database)/documents/deliveries/$('listing_' + listingId);
+    }
+
+    function listingClaimPath(listingId) {
+      return /databases/$(database)/documents/listingClaims/$(listingId);
+    }
+
     function validLocation(value) {
       return value is map
         && value.keys().hasAll(['lat', 'lng', 'address'])
@@ -183,34 +195,78 @@ service cloud.firestore {
           );
 
       allow update: if (
-          hasRole('donor')
-          && resource.data.donorId == request.auth.uid
-          && resource.data.status == 'active'
-          && resource.data.claimedBy == null
-          && request.resource.data.status == 'active'
-          && request.resource.data.claimedBy == resource.data.claimedBy
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly([
-              'foodType', 'description', 'quantity',
-              'unit', 'category', 'urgencyLevel', 'address', 'location'
-            ])
-          && request.resource.data.foodType is string
-          && request.resource.data.foodType.size() > 0
-          && request.resource.data.foodType.size() <= 150
-          && request.resource.data.description is string
-          && request.resource.data.description.size() <= 5000
-          && request.resource.data.quantity is number
-          && request.resource.data.quantity > 0
-          && request.resource.data.quantity <= 1000000
-          && request.resource.data.unit in ['kg', 'portions', 'packets']
-          && request.resource.data.category in ['cooked', 'raw', 'packaged', 'beverages']
-          && request.resource.data.urgencyLevel in ['low', 'medium', 'high']
-          && request.resource.data.address is string
-          && request.resource.data.address.size() <= 500
-          && validLocation(request.resource.data.location)
-          && request.resource.data.location.lat == resource.data.location.lat
-          && request.resource.data.location.lng == resource.data.location.lng
-          && request.resource.data.location.address == request.resource.data.address
+          (
+            hasRole('donor')
+            && resource.data.donorId == request.auth.uid
+            && resource.data.status == 'active'
+            && resource.data.claimedBy == null
+            && request.resource.data.status == 'active'
+            && request.resource.data.claimedBy == resource.data.claimedBy
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'foodType', 'description', 'quantity',
+                'unit', 'category', 'urgencyLevel', 'address', 'location'
+              ])
+            && request.resource.data.foodType is string
+            && request.resource.data.foodType.size() > 0
+            && request.resource.data.foodType.size() <= 150
+            && request.resource.data.description is string
+            && request.resource.data.description.size() <= 5000
+            && request.resource.data.quantity is number
+            && request.resource.data.quantity > 0
+            && request.resource.data.quantity <= 1000000
+            && request.resource.data.unit in ['kg', 'portions', 'packets']
+            && request.resource.data.category in ['cooked', 'raw', 'packaged', 'beverages']
+            && request.resource.data.urgencyLevel in ['low', 'medium', 'high']
+            && request.resource.data.address is string
+            && request.resource.data.address.size() <= 500
+            && validLocation(request.resource.data.location)
+            && request.resource.data.location.lat == resource.data.location.lat
+            && request.resource.data.location.lng == resource.data.location.lng
+            && request.resource.data.location.address == request.resource.data.address
+          )
+          || (
+            hasRole('collector')
+            && resource.data.status == 'active'
+            && resource.data.claimedBy == null
+            && request.resource.data.status == 'claimed'
+            && request.resource.data.claimedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'claimedBy'])
+            && existsAfter(deliveryPath(listingId))
+            && getAfter(deliveryPath(listingId)).data.listingId == listingId
+            && getAfter(deliveryPath(listingId)).data.status == 'assigned'
+            && getAfter(deliveryPath(listingId)).data.volunteerId == 'unassigned'
+            && existsAfter(listingClaimPath(listingId))
+            && getAfter(listingClaimPath(listingId)).data.collectorId == request.auth.uid
+          )
+          || (
+            hasRole('collector')
+            && resource.data.status == 'claimed'
+            && resource.data.claimedBy == request.auth.uid
+            && request.resource.data.status == 'active'
+            && request.resource.data.claimedBy == null
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'claimedBy'])
+            && get(deliveryPath(listingId)).data.status == 'assigned'
+            && get(deliveryPath(listingId)).data.volunteerId == 'unassigned'
+            && !existsAfter(deliveryPath(listingId))
+            && get(listingClaimPath(listingId)).data.collectorId == request.auth.uid
+            && !existsAfter(listingClaimPath(listingId))
+          )
+          || (
+            hasRole('volunteer')
+            && resource.data.status == 'claimed'
+            && resource.data.claimedBy is string
+            && request.resource.data.status == 'delivered'
+            && request.resource.data.claimedBy == resource.data.claimedBy
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status'])
+            && existsAfter(deliveryPath(listingId))
+            && getAfter(deliveryPath(listingId)).data.listingId == listingId
+            && getAfter(deliveryPath(listingId)).data.status == 'delivered'
+            && getAfter(deliveryPath(listingId)).data.volunteerId == request.auth.uid
+          )
         );
 
       allow delete: if resource.data.status == 'active'
@@ -236,52 +292,67 @@ service cloud.firestore {
           .hasOnly(['isRead']);
     }
 
-    match /listingAccessEvents/{eventId} {
+    match /listingClaims/{listingId} {
       allow get: if hasRole('volunteer')
         || (
           hasRole('collector')
-          && resource.data.collectorId == request.auth.uid
+          && (
+            !exists(listingClaimPath(listingId))
+            || resource.data.collectorId == request.auth.uid
+          )
         );
       allow list: if hasRole('volunteer');
 
       allow create: if hasRole('collector')
-        && eventId == request.resource.data.listingId + '_' + request.auth.uid
         && request.resource.data.keys().hasAll([
-          'collectorId', 'collectorName', 'listingId', 'foodType',
-          'description', 'quantity', 'unit', 'address',
+          'listingId', 'collectorId', 'collectorName', 'donorId',
+          'foodType', 'description', 'quantity', 'unit', 'pickupAddress', 'dropAddress',
           'pickupWindowStart', 'pickupWindowEnd', 'createdAt'
         ])
         && request.resource.data.keys().hasOnly([
-          'collectorId', 'collectorName', 'listingId', 'foodType',
-          'description', 'quantity', 'unit', 'address',
+          'listingId', 'collectorId', 'collectorName', 'donorId',
+          'foodType', 'description', 'quantity', 'unit', 'pickupAddress', 'dropAddress',
           'pickupWindowStart', 'pickupWindowEnd', 'createdAt'
         ])
+        && request.resource.data.listingId == listingId
         && request.resource.data.collectorId == request.auth.uid
         && request.resource.data.collectorName
           == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
-        && request.resource.data.listingId is string
-        && request.resource.data.listingId.size() > 0
-        && request.resource.data.listingId.size() <= 128
-        && request.resource.data.createdAt == request.time
-        && exists(/databases/$(database)/documents/listings/$(request.resource.data.listingId))
-        && get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.status == 'active'
-        && get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.claimedBy == null
-        && request.resource.data.foodType
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.foodType
-        && request.resource.data.description
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.description
-        && request.resource.data.quantity
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.quantity
-        && request.resource.data.unit
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.unit
-        && request.resource.data.address
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.address
+        && existsAfter(listingPath(listingId))
+        && getAfter(listingPath(listingId)).data.status == 'claimed'
+        && getAfter(listingPath(listingId)).data.claimedBy == request.auth.uid
+        && request.resource.data.donorId == get(listingPath(listingId)).data.donorId
+        && request.resource.data.foodType == get(listingPath(listingId)).data.foodType
+        && request.resource.data.description == get(listingPath(listingId)).data.description
+        && request.resource.data.quantity == get(listingPath(listingId)).data.quantity
+        && request.resource.data.unit == get(listingPath(listingId)).data.unit
+        && request.resource.data.pickupAddress == get(listingPath(listingId)).data.address
         && request.resource.data.pickupWindowStart
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.pickupWindowStart
+          == get(listingPath(listingId)).data.pickupWindowStart
         && request.resource.data.pickupWindowEnd
-          == get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.pickupWindowEnd;
+          == get(listingPath(listingId)).data.pickupWindowEnd
+        && request.resource.data.dropAddress
+          == (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.location.address != ''
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.location.address
+              : 'NGO Location'
+          )
+        && existsAfter(deliveryPath(listingId))
+        && getAfter(deliveryPath(listingId)).data.listingId == listingId
+        && getAfter(deliveryPath(listingId)).data.status == 'assigned'
+        && getAfter(deliveryPath(listingId)).data.volunteerId == 'unassigned'
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 40;
 
-      allow update, delete: if false;
+      allow delete: if hasRole('collector')
+        && resource.data.collectorId == request.auth.uid
+        && get(listingPath(listingId)).data.status == 'claimed'
+        && get(listingPath(listingId)).data.claimedBy == request.auth.uid
+        && getAfter(listingPath(listingId)).data.status == 'active'
+        && getAfter(listingPath(listingId)).data.claimedBy == null
+        && !existsAfter(deliveryPath(listingId));
+
+      allow update: if false;
     }
 
     match /ratings/{ratingId} {
@@ -291,7 +362,26 @@ service cloud.firestore {
     }
 
     match /deliveries/{deliveryId} {
-      allow get, list: if isAdmin()
+      allow get: if isAdmin()
+        || (
+          hasRole('volunteer')
+          && (
+            resource.data.status == 'assigned'
+            || resource.data.volunteerId == request.auth.uid
+          )
+        )
+        || (
+          hasRole('collector')
+          && (
+            !exists(/databases/$(database)/documents/deliveries/$(deliveryId))
+            || (
+              resource.data.listingId is string
+              && deliveryId == 'listing_' + resource.data.listingId
+              && get(listingPath(resource.data.listingId)).data.claimedBy == request.auth.uid
+            )
+          )
+        );
+      allow list: if isAdmin()
         || (
           hasRole('volunteer')
           && (
@@ -300,7 +390,82 @@ service cloud.firestore {
           )
         );
 
-      allow create, update, delete: if false;
+      allow create: if hasRole('collector')
+        && request.resource.data.keys().hasAll([
+          'listingId', 'volunteerId', 'donorId', 'status', 'pickupAddress',
+          'dropAddress', 'estimatedTime', 'distanceKm', 'foodDetails', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'listingId', 'volunteerId', 'donorId', 'status', 'pickupAddress',
+          'dropAddress', 'estimatedTime', 'distanceKm', 'foodDetails', 'createdAt'
+        ])
+        && deliveryId == 'listing_' + request.resource.data.listingId
+        && existsAfter(listingPath(request.resource.data.listingId))
+        && getAfter(listingPath(request.resource.data.listingId)).data.status == 'claimed'
+        && getAfter(listingPath(request.resource.data.listingId)).data.claimedBy == request.auth.uid
+        && existsAfter(listingClaimPath(request.resource.data.listingId))
+        && getAfter(listingClaimPath(request.resource.data.listingId)).data.collectorId == request.auth.uid
+        && request.resource.data.volunteerId == 'unassigned'
+        && request.resource.data.donorId == get(listingPath(request.resource.data.listingId)).data.donorId
+        && request.resource.data.status == 'assigned'
+        && request.resource.data.pickupAddress == get(listingPath(request.resource.data.listingId)).data.address
+        && request.resource.data.dropAddress
+          == (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.location.address != ''
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.location.address
+              : 'NGO Location'
+          )
+        && request.resource.data.estimatedTime == '30 mins'
+        && request.resource.data.distanceKm is number
+        && request.resource.data.distanceKm >= 0
+        && request.resource.data.distanceKm <= 20050
+        && request.resource.data.foodDetails
+          == get(listingPath(request.resource.data.listingId)).data.foodType
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 40;
+
+      allow update: if hasRole('volunteer')
+        && resource.data.listingId is string
+        && deliveryId == 'listing_' + resource.data.listingId
+        && exists(listingPath(resource.data.listingId))
+        && get(listingPath(resource.data.listingId)).data.status == 'claimed'
+        && (
+          (
+            resource.data.status == 'assigned'
+            && resource.data.volunteerId == 'unassigned'
+            && request.resource.data.status == 'en_route'
+            && request.resource.data.volunteerId == request.auth.uid
+          )
+          || (
+            resource.data.volunteerId == request.auth.uid
+            && (
+              (resource.data.status == 'en_route' && request.resource.data.status == 'picked_up')
+              || (resource.data.status == 'picked_up' && request.resource.data.status == 'delivered')
+            )
+            && request.resource.data.volunteerId == resource.data.volunteerId
+          )
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'volunteerId'])
+        && (
+          request.resource.data.status != 'delivered'
+          || (
+            getAfter(listingPath(resource.data.listingId)).data.status == 'delivered'
+            && getAfter(listingPath(resource.data.listingId)).data.claimedBy
+              == get(listingPath(resource.data.listingId)).data.claimedBy
+          )
+        );
+
+      allow delete: if hasRole('collector')
+        && resource.data.listingId is string
+        && deliveryId == 'listing_' + resource.data.listingId
+        && resource.data.status == 'assigned'
+        && resource.data.volunteerId == 'unassigned'
+        && get(listingPath(resource.data.listingId)).data.status == 'claimed'
+        && get(listingPath(resource.data.listingId)).data.claimedBy == request.auth.uid
+        && getAfter(listingPath(resource.data.listingId)).data.status == 'active'
+        && getAfter(listingPath(resource.data.listingId)).data.claimedBy == null
+        && !existsAfter(listingClaimPath(resource.data.listingId));
     }
 
     match /{document=**} {

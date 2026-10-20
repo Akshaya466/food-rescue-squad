@@ -6,17 +6,18 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Phone, ChevronRight, Flame, Package, Truck, CheckCircle, Navigation, Award } from "lucide-react";
-import { subscribeToUnassignedDeliveries, subscribeToDeliveryHistory } from "@/services/deliveryService";
+import {
+  subscribeToVolunteerDeliveries,
+  subscribeToDeliveryHistory,
+  updateDeliveryStatus,
+} from "@/services/deliveryService";
 import { Delivery, User } from "@/types";
 import { auth } from "@/config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile } from "@/services/userService";
-import { SparkUnavailableNotice } from "@/components/SparkUnavailableNotice";
 import { getCurrentCoordinates } from "@/services/locationService";
-import {
-  ListingAccessEvent,
-  subscribeToListingAccessEvents,
-} from "@/services/listingAccessService";
+import { ListingClaimNotification, subscribeToListingClaims } from "@/services/listingClaimService";
+import { toast } from "sonner";
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -59,26 +60,27 @@ export default function VolunteerDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [listingAccessEvents, setListingAccessEvents] = useState<ListingAccessEvent[]>([]);
-  const [listingAccessError, setListingAccessError] = useState<string | null>(null);
+  const [listingClaims, setListingClaims] = useState<ListingClaimNotification[]>([]);
+  const [listingClaimsError, setListingClaimsError] = useState<string | null>(null);
+  const [updatingDeliveryId, setUpdatingDeliveryId] = useState<string | null>(null);
 
   useEffect(() => {
-  let unsubActive: (() => void) | null = null;
+  let unsubDeliveries: (() => void) | null = null;
   let unsubHistory: (() => void) | null = null;
-  let unsubListingAccess: (() => void) | null = null;
+  let unsubListingClaims: (() => void) | null = null;
   let authGeneration = 0;
 
   const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
     const generation = ++authGeneration;
-    if (unsubActive) { unsubActive(); unsubActive = null; }
+    if (unsubDeliveries) { unsubDeliveries(); unsubDeliveries = null; }
     if (unsubHistory) { unsubHistory(); unsubHistory = null; }
-    if (unsubListingAccess) { unsubListingAccess(); unsubListingAccess = null; }
+    if (unsubListingClaims) { unsubListingClaims(); unsubListingClaims = null; }
 
     if (!firebaseUser) {
       setUser(null);
       setActive([]);
       setHistory([]);
-      setListingAccessEvents([]);
+      setListingClaims([]);
       return;
     }
 
@@ -87,11 +89,12 @@ export default function VolunteerDashboard() {
       if (generation !== authGeneration) return;
       setUser(profile);
       if (!profile || profile.role !== "volunteer") {
-        setListingAccessEvents([]);
+        setListingClaims([]);
         return;
       }
 
-      unsubActive = subscribeToUnassignedDeliveries(
+      unsubDeliveries = subscribeToVolunteerDeliveries(
+        firebaseUser.uid,
         (deliveries) => {
           if (generation !== authGeneration) return;
           setActive(deliveries);
@@ -104,13 +107,13 @@ export default function VolunteerDashboard() {
       unsubHistory = subscribeToDeliveryHistory(firebaseUser.uid, (deliveries) => {
         if (generation === authGeneration) setHistory(deliveries);
       });
-      setListingAccessError(null);
-      unsubListingAccess = subscribeToListingAccessEvents(
-        (events) => {
-          if (generation === authGeneration) setListingAccessEvents(events);
+      setListingClaimsError(null);
+      unsubListingClaims = subscribeToListingClaims(
+        (claims) => {
+          if (generation === authGeneration) setListingClaims(claims);
         },
         (error) => {
-          if (generation === authGeneration) setListingAccessError(error.message);
+          if (generation === authGeneration) setListingClaimsError(error.message);
         }
       );
 
@@ -128,7 +131,7 @@ export default function VolunteerDashboard() {
     } catch (error: unknown) {
       if (generation !== authGeneration) return;
       console.error("Could not load volunteer profile:", error);
-      setListingAccessError(
+      setListingClaimsError(
         error instanceof Error ? error.message : "Could not load volunteer access alerts."
       );
     }
@@ -137,11 +140,38 @@ export default function VolunteerDashboard() {
   return () => {
     authGeneration += 1;
     unsubAuth();
-    if (unsubActive) unsubActive();
+    if (unsubDeliveries) unsubDeliveries();
     if (unsubHistory) unsubHistory();
-    if (unsubListingAccess) unsubListingAccess();
+    if (unsubListingClaims) unsubListingClaims();
   };
 }, []);
+
+  const advanceDelivery = async (delivery: Delivery) => {
+    const nextStatus: Partial<Record<Delivery["status"], Delivery["status"]>> = {
+      assigned: "en_route",
+      en_route: "picked_up",
+      picked_up: "delivered",
+    };
+    const next = nextStatus[delivery.status];
+    if (!next) return;
+
+    setUpdatingDeliveryId(delivery.id);
+    try {
+      await updateDeliveryStatus(delivery.id, next);
+      if (next === "delivered") {
+        toast.success("Delivery completed.");
+      } else if (next === "en_route") {
+        toast.success("Delivery accepted.");
+      } else {
+        toast.success("Food marked as picked up.");
+      }
+    } catch (error: unknown) {
+      console.error("Could not update delivery status:", error);
+      toast.error(error instanceof Error ? error.message : "Could not update delivery.");
+    } finally {
+      setUpdatingDeliveryId(null);
+    }
+  };
   const totalKgRescued = history.reduce((sum, d) => sum + (d.distanceKm || 0), 0).toFixed(1);
 
 const todayStats = [
@@ -177,31 +207,31 @@ const todayStats = [
       </header>
 
       <div className="container py-4 pb-24 space-y-4">
-        <SparkUnavailableNotice operation="Advancing deliveries" />
-        {listingAccessError && (
+        {listingClaimsError && (
           <div role="alert" className="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">
-            Could not load collector food access alerts: {listingAccessError}
+            Could not load food claim notifications: {listingClaimsError}
           </div>
         )}
-        {listingAccessEvents.length > 0 && (
+        {listingClaims.length > 0 && (
           <section
             aria-live="polite"
-            aria-label="Food opened by collectors"
+            aria-label="Food claimed by collectors"
             className="space-y-2 rounded-xl border border-green-500/30 bg-green-500/10 p-4"
           >
-            <h2 className="font-semibold text-green-300">Food opened by collectors</h2>
-            {listingAccessEvents.map((event) => (
-              <article key={event.id} className="rounded-lg bg-slate-800 p-3 text-sm">
+            <h2 className="font-semibold text-green-300">Food claimed by collectors</h2>
+            {listingClaims.map((claim) => (
+              <article key={claim.id} className="rounded-lg bg-slate-800 p-3 text-sm">
                 <p>
-                  <span className="font-semibold">{event.collectorName}</span>
-                  {" opened "}
-                  <span className="font-semibold">{event.foodType}</span>
-                  {" ("}{event.quantity} {event.unit}{")"}
+                  <span className="font-semibold">{claim.collectorName}</span>
+                  {" claimed "}
+                  <span className="font-semibold">{claim.foodType}</span>
+                  {" ("}{claim.quantity} {claim.unit}{")"}
                 </p>
-                <p className="text-xs text-slate-400">Listing reference: {event.listingId}</p>
-                <p className="mt-1 text-slate-300">Pickup: {event.address}</p>
+                <p className="text-xs text-slate-400">Listing reference: {claim.listingId}</p>
+                <p className="mt-1 text-slate-300">Pickup: {claim.pickupAddress}</p>
+                <p className="text-slate-300">Delivery: {claim.dropAddress}</p>
                 <p className="text-xs text-slate-400">
-                  {event.pickupWindowStart} – {event.pickupWindowEnd}
+                  {claim.pickupWindowStart} – {claim.pickupWindowEnd}
                 </p>
               </article>
             ))}
@@ -321,10 +351,16 @@ const todayStats = [
                     <div className="flex gap-2">
                       <Button
                         className="flex-1 bg-green-500 text-black hover:bg-green-400 font-semibold"
-                        disabled
-                        title="Delivery status updates require a trusted Cloud Functions backend."
+                        disabled={updatingDeliveryId === d.id}
+                        onClick={() => void advanceDelivery(d)}
                       >
-                        Delivery updates unavailable
+                        {updatingDeliveryId === d.id
+                          ? "Updating..."
+                          : d.status === "assigned"
+                            ? "Accept & start"
+                            : d.status === "en_route"
+                              ? "Mark picked up"
+                              : "Mark delivered"}
                       </Button>
                       <Button
                         variant="outline"

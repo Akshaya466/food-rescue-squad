@@ -7,13 +7,13 @@ import {
   deleteDoc,
   doc,
   query,
+  runTransaction,
   where,
   onSnapshot,
 } from "firebase/firestore";
-import { db } from "@/config/firebase";
-import { FoodListing } from "@/types";
+import { auth, db } from "@/config/firebase";
+import { FoodListing, User } from "@/types";
 import { synchronizeListingAddress } from "@/services/listingUpdate";
-import { throwSparkUnavailable } from "@/services/sparkUnavailable";
 
 const COL = "listings";
 
@@ -69,13 +69,117 @@ export async function deleteListing(id: string): Promise<void> {
 }
 
 export async function claimListing(
-  _id: string
+  listingId: string,
+  collector: User
 ): Promise<FoodListing> {
-  return throwSparkUnavailable("Claiming food");
+  const uid = auth.currentUser?.uid;
+  if (!uid || uid !== collector.id || collector.role !== "collector") {
+    throw new Error("An authenticated collector is required to claim food.");
+  }
+
+  const listingRef = doc(db, COL, listingId);
+  const deliveryRef = doc(db, "deliveries", `listing_${listingId}`);
+  const claimRef = doc(db, "listingClaims", listingId);
+  const createdAt = new Date().toISOString();
+
+  return runTransaction(db, async (transaction) => {
+    const [listingSnapshot, deliverySnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(listingRef),
+      transaction.get(deliveryRef),
+      transaction.get(claimRef),
+    ]);
+    if (!listingSnapshot.exists()) throw new Error("Food listing was not found.");
+
+    const listing = { id: listingSnapshot.id, ...listingSnapshot.data() } as FoodListing;
+    if (listing.status !== "active" || listing.claimedBy) {
+      throw new Error("This food listing is no longer available.");
+    }
+    if (deliverySnapshot.exists() || claimSnapshot.exists()) {
+      throw new Error("This food listing already has an active claim.");
+    }
+
+    const distanceKm = calculateDistanceKm(listing.location, collector.location);
+    transaction.update(listingRef, { status: "claimed", claimedBy: uid });
+    transaction.set(deliveryRef, {
+      listingId,
+      volunteerId: "unassigned",
+      donorId: listing.donorId,
+      status: "assigned",
+      pickupAddress: listing.address,
+      dropAddress: collector.location.address || "NGO Location",
+      estimatedTime: "30 mins",
+      distanceKm,
+      foodDetails: listing.foodType,
+      createdAt,
+    });
+    transaction.set(claimRef, {
+      listingId,
+      collectorId: uid,
+      collectorName: collector.name,
+      donorId: listing.donorId,
+      dropAddress: collector.location.address || "NGO Location",
+      foodType: listing.foodType,
+      description: listing.description,
+      quantity: listing.quantity,
+      unit: listing.unit,
+      pickupAddress: listing.address,
+      pickupWindowStart: listing.pickupWindowStart,
+      pickupWindowEnd: listing.pickupWindowEnd,
+      createdAt,
+    });
+
+    return { ...listing, status: "claimed", claimedBy: uid };
+  });
 }
 
-export async function unclaimListing(_id: string): Promise<void> {
-  return throwSparkUnavailable("Unclaiming food");
+function calculateDistanceKm(
+  from: FoodListing["location"],
+  to: User["location"]
+): number {
+  const radians = (degrees: number) => (degrees * Math.PI) / 180;
+  const latDelta = radians(to.lat - from.lat);
+  const lngDelta = radians(to.lng - from.lng);
+  const factor =
+    Math.sin(latDelta / 2) ** 2
+    + Math.cos(radians(from.lat))
+    * Math.cos(radians(to.lat))
+    * Math.sin(lngDelta / 2) ** 2;
+  const bounded = Math.max(0, Math.min(1, factor));
+  return Math.round(
+    6371 * 2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded)) * 10
+  ) / 10;
+}
+
+export async function unclaimListing(listingId: string): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Sign in to release this food listing.");
+
+  const listingRef = doc(db, COL, listingId);
+  const deliveryRef = doc(db, "deliveries", `listing_${listingId}`);
+  const claimRef = doc(db, "listingClaims", listingId);
+
+  await runTransaction(db, async (transaction) => {
+    const [listingSnapshot, deliverySnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(listingRef),
+      transaction.get(deliveryRef),
+      transaction.get(claimRef),
+    ]);
+    if (!listingSnapshot.exists()) throw new Error("Food listing was not found.");
+    if (listingSnapshot.data().status !== "claimed"
+      || listingSnapshot.data().claimedBy !== uid) {
+      throw new Error("You do not own this food claim.");
+    }
+    if (!deliverySnapshot.exists()
+      || deliverySnapshot.data().status !== "assigned"
+      || deliverySnapshot.data().volunteerId !== "unassigned"
+      || !claimSnapshot.exists()) {
+      throw new Error("This food can no longer be released because delivery has started.");
+    }
+
+    transaction.update(listingRef, { status: "active", claimedBy: null });
+    transaction.delete(deliveryRef);
+    transaction.delete(claimRef);
+  });
 }
 
 export async function getListingsByDonor(donorId: string): Promise<FoodListing[]> {

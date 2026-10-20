@@ -22,8 +22,7 @@ const firebaseMocks = vi.hoisted(() => ({
 vi.mock("firebase/firestore", () => firestoreMocks);
 vi.mock("@/config/firebase", () => firebaseMocks);
 
-import { claimListing, unclaimListing, createListing } from "@/services/foodService";
-import { updateDeliveryStatus } from "@/services/deliveryService";
+import { createListing } from "@/services/foodService";
 import {
   approveRoleRequest,
   setUserVerification,
@@ -41,12 +40,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Spark-only callable operations", () => {
+describe("Spark-only server operations", () => {
   it("fails all unavailable operations with a clear no-write error", async () => {
     const operations = [
-      claimListing("listing-1"),
-      unclaimListing("listing-1"),
-      updateDeliveryStatus("delivery-1", "en_route"),
       approveRoleRequest("user-1"),
       setUserVerification("user-1", true),
       submitRating({

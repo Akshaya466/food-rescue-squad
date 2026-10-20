@@ -20,9 +20,11 @@ import {
   doc,
   getDoc,
   getDocs,
-  serverTimestamp,
+  query,
   setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 
 const projectId = "demo-anora-rules";
@@ -63,18 +65,33 @@ const listing = (donorId: string) => ({
   createdAt: "2026-10-18T08:00:00.000Z",
 });
 
-const listingAccessEvent = (collectorId: string, listingId: string) => ({
+const listingClaim = (collectorId: string, listingId: string) => ({
+  listingId,
   collectorId,
   collectorName: "Test Collector",
-  listingId,
+  donorId: "listing-donor",
   foodType: "Vegetables",
   description: "Fresh surplus vegetables",
   quantity: 10,
   unit: "kg",
-  address: "Test address",
+  pickupAddress: "Test address",
+  dropAddress: "Test address",
   pickupWindowStart: "2026-10-18T10:00",
   pickupWindowEnd: "2026-10-18T12:00",
-  createdAt: serverTimestamp(),
+  createdAt: "2026-10-18T08:00:00.000Z",
+});
+
+const delivery = (listingId: string) => ({
+  listingId,
+  volunteerId: "unassigned",
+  donorId: "listing-donor",
+  status: "assigned",
+  pickupAddress: "Test address",
+  dropAddress: "Test address",
+  estimatedTime: "30 mins",
+  distanceKm: 0,
+  foodDetails: "Vegetables",
+  createdAt: "2026-10-18T08:00:00.000Z",
 });
 
 async function seedUser(uid: string) {
@@ -337,23 +354,22 @@ describe("Firestore security rules", () => {
     );
   });
 
-  it("allows a collector to record one valid listing access event for volunteers", async () => {
-    const collectorId = "event-collector";
-    const listingId = "event-listing";
+  it("allows an atomic collector claim and exposes the claim notification to volunteers", async () => {
+    const collectorId = "claim-collector";
+    const listingId = "claim-listing";
     await seedListingAndCollector(collectorId, listingId);
     const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
 
-    await assertSucceeds(
-      setDoc(
-        doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`),
-        listingAccessEvent(collectorId, listingId)
-      )
-    );
-    await assertSucceeds(
-      getDoc(doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`))
-    );
+    const batch = writeBatch(collectorDb);
+    batch.update(doc(collectorDb, "listings", listingId), {
+      status: "claimed",
+      claimedBy: collectorId,
+    });
+    batch.set(doc(collectorDb, "deliveries", `listing_${listingId}`), delivery(listingId));
+    batch.set(doc(collectorDb, "listingClaims", listingId), listingClaim(collectorId, listingId));
+    await assertSucceeds(batch.commit());
 
-    const volunteerId = "event-volunteer";
+    const volunteerId = "claim-volunteer";
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "users", volunteerId), {
         ...userProfile(volunteerId),
@@ -361,81 +377,120 @@ describe("Firestore security rules", () => {
       });
     });
     const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
-    const secondCollectorId = "event-other-collector";
-    await seedListingAndCollector(secondCollectorId, listingId);
-    const secondCollectorDb = testEnvironment
-      .authenticatedContext(secondCollectorId)
-      .firestore();
-    await assertFails(
-      getDoc(doc(secondCollectorDb, "listingAccessEvents", `${listingId}_${collectorId}`))
-    );
+    await assertSucceeds(getDoc(doc(volunteerDb, "listingClaims", listingId)));
+    await assertSucceeds(getDocs(collection(volunteerDb, "listingClaims")));
     await assertSucceeds(
-      getDoc(doc(volunteerDb, "listingAccessEvents", `${listingId}_${collectorId}`))
+      getDocs(query(collection(volunteerDb, "deliveries"), where("status", "==", "assigned")))
     );
-    await assertSucceeds(getDocs(collection(volunteerDb, "listingAccessEvents")));
   });
 
-  it("denies forged, duplicate, and non-collector listing access events", async () => {
-    const collectorId = "event-owner";
-    const listingId = "event-listed-food";
+  it("denies partial, forged, and non-collector claims", async () => {
+    const collectorId = "claim-security-collector";
+    const listingId = "claim-security-listing";
     await seedListingAndCollector(collectorId, listingId);
     const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
-    const eventRef = doc(
-      collectorDb,
-      "listingAccessEvents",
-      `${listingId}_${collectorId}`
-    );
 
     await assertFails(
-      setDoc(eventRef, {
-        ...listingAccessEvent(collectorId, listingId),
-        address: "Forged pickup address",
+      updateDoc(doc(collectorDb, "listings", listingId), {
+        status: "claimed",
+        claimedBy: collectorId,
       })
     );
-    await assertSucceeds(setDoc(eventRef, listingAccessEvent(collectorId, listingId)));
-    await assertFails(setDoc(eventRef, listingAccessEvent(collectorId, listingId)));
 
-    await seedUser("event-donor");
-    const donorDb = testEnvironment.authenticatedContext("event-donor").firestore();
+    const forgedBatch = writeBatch(collectorDb);
+    forgedBatch.update(doc(collectorDb, "listings", listingId), {
+      status: "claimed",
+      claimedBy: collectorId,
+    });
+    forgedBatch.set(doc(collectorDb, "deliveries", `listing_${listingId}`), delivery(listingId));
+    forgedBatch.set(doc(collectorDb, "listingClaims", listingId), {
+      ...listingClaim(collectorId, listingId),
+      pickupAddress: "Forged address",
+    });
+    await assertFails(forgedBatch.commit());
+
+    await seedUser("claim-security-donor");
+    const donorDb = testEnvironment.authenticatedContext("claim-security-donor").firestore();
     await assertFails(
-      setDoc(
-        doc(donorDb, "listingAccessEvents", `${listingId}_event-donor`),
-        listingAccessEvent("event-donor", listingId)
-      )
+      updateDoc(doc(donorDb, "listings", listingId), {
+        status: "claimed",
+        claimedBy: "claim-security-donor",
+      })
     );
   });
 
-  it("denies volunteers from creating listing access events and donors from reading them", async () => {
-    const collectorId = "event-read-collector";
-    const listingId = "event-read-listing";
+  it("allows unclaim only before volunteer delivery starts", async () => {
+    const collectorId = "unclaim-collector";
+    const listingId = "unclaim-listing";
     await seedListingAndCollector(collectorId, listingId);
     const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
-    await assertSucceeds(
-      setDoc(
-        doc(collectorDb, "listingAccessEvents", `${listingId}_${collectorId}`),
-        listingAccessEvent(collectorId, listingId)
-      )
-    );
+    const claimBatch = writeBatch(collectorDb);
+    claimBatch.update(doc(collectorDb, "listings", listingId), {
+      status: "claimed",
+      claimedBy: collectorId,
+    });
+    claimBatch.set(doc(collectorDb, "deliveries", `listing_${listingId}`), delivery(listingId));
+    claimBatch.set(doc(collectorDb, "listingClaims", listingId), listingClaim(collectorId, listingId));
+    await assertSucceeds(claimBatch.commit());
 
-    const volunteerId = "event-read-volunteer";
+    const unclaimBatch = writeBatch(collectorDb);
+    unclaimBatch.update(doc(collectorDb, "listings", listingId), {
+      status: "active",
+      claimedBy: null,
+    });
+    unclaimBatch.delete(doc(collectorDb, "deliveries", `listing_${listingId}`));
+    unclaimBatch.delete(doc(collectorDb, "listingClaims", listingId));
+    await assertSucceeds(unclaimBatch.commit());
+  });
+
+  it("lets a volunteer advance an assigned delivery and mark its listing delivered atomically", async () => {
+    const collectorId = "delivery-collector";
+    const volunteerId = "delivery-volunteer";
+    const listingId = "delivery-listing";
+    await seedListingAndCollector(collectorId, listingId);
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "users", volunteerId), {
         ...userProfile(volunteerId),
         role: "volunteer",
       });
     });
-    const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
-    await assertFails(
-      setDoc(
-        doc(volunteerDb, "listingAccessEvents", `${listingId}_${volunteerId}`),
-        listingAccessEvent(volunteerId, listingId)
-      )
-    );
+    const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
+    const claimBatch = writeBatch(collectorDb);
+    claimBatch.update(doc(collectorDb, "listings", listingId), {
+      status: "claimed",
+      claimedBy: collectorId,
+    });
+    claimBatch.set(doc(collectorDb, "deliveries", `listing_${listingId}`), delivery(listingId));
+    claimBatch.set(doc(collectorDb, "listingClaims", listingId), listingClaim(collectorId, listingId));
+    await assertSucceeds(claimBatch.commit());
 
-    await seedUser("event-read-donor");
-    const donorDb = testEnvironment.authenticatedContext("event-read-donor").firestore();
-    await assertFails(
-      getDocs(collection(donorDb, "listingAccessEvents"))
-    );
+    const volunteerDb = testEnvironment.authenticatedContext(volunteerId).firestore();
+    const deliveryRef = doc(volunteerDb, "deliveries", `listing_${listingId}`);
+    const startBatch = writeBatch(volunteerDb);
+    startBatch.update(deliveryRef, {
+      status: "en_route",
+      volunteerId,
+    });
+    await assertSucceeds(startBatch.commit());
+
+    const forbiddenUnclaim = writeBatch(collectorDb);
+    forbiddenUnclaim.update(doc(collectorDb, "listings", listingId), {
+      status: "active",
+      claimedBy: null,
+    });
+    forbiddenUnclaim.delete(doc(collectorDb, "deliveries", `listing_${listingId}`));
+    forbiddenUnclaim.delete(doc(collectorDb, "listingClaims", listingId));
+    await assertFails(forbiddenUnclaim.commit());
+
+    const pickupBatch = writeBatch(volunteerDb);
+    pickupBatch.update(deliveryRef, { status: "picked_up" });
+    await assertSucceeds(pickupBatch.commit());
+
+    const deliveredBatch = writeBatch(volunteerDb);
+    deliveredBatch.update(deliveryRef, { status: "delivered" });
+    deliveredBatch.update(doc(volunteerDb, "listings", listingId), {
+      status: "delivered",
+    });
+    await assertSucceeds(deliveredBatch.commit());
   });
 });
