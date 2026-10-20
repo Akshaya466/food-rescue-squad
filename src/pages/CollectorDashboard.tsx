@@ -392,13 +392,18 @@ export default function CollectorDashboard() {
               )}
               {selectedListing?.status === "claimed"
                 && selectedListing.claimedBy === currentUid && (
-                  <Button
-                    variant="destructive"
-                    onClick={() => void handleUnclaim()}
-                    disabled={claimBusy}
-                  >
-                    {claimBusy ? "Releasing..." : "Unclaim"}
-                  </Button>
+                  <>
+                    <Button variant="secondary" disabled>
+                      Claimed
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => void handleUnclaim()}
+                      disabled={claimBusy}
+                    >
+                      {claimBusy ? "Releasing..." : "Unclaim"}
+                    </Button>
+                  </>
                 )}
               {selectedListing?.status === "delivered" && (
                 <Button disabled>Delivered</Button>

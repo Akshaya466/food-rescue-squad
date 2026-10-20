@@ -384,6 +384,20 @@ describe("Firestore security rules", () => {
     );
   });
 
+  it("allows collectors to read absent claim documents before starting a claim", async () => {
+    const collectorId = "claim-read-collector";
+    const listingId = "claim-read-listing";
+    await seedListingAndCollector(collectorId, listingId);
+    const collectorDb = testEnvironment.authenticatedContext(collectorId).firestore();
+
+    await assertSucceeds(
+      getDoc(doc(collectorDb, "deliveries", `listing_${listingId}`))
+    );
+    await assertSucceeds(
+      getDoc(doc(collectorDb, "listingClaims", listingId))
+    );
+  });
+
   it("denies partial, forged, and non-collector claims", async () => {
     const collectorId = "claim-security-collector";
     const listingId = "claim-security-listing";
